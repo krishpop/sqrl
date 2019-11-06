@@ -12,6 +12,8 @@ from tf_agents.networks import actor_distribution_network
 from tf_agents.networks import normal_projection_network
 from tf_agents.agents.ddpg import critic_network
 from tf_agents.utils import common
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+from matplotlib.figure import Figure
 
 import envs
 import algos
@@ -24,7 +26,7 @@ from absl import logging
 tf.compat.v1.enable_v2_behavior()
 
 flags.DEFINE_string('load_dir', None, 'load path for policy')
-flags.DEFINE_string('vid_dir', '../videos/sac/', 'save path for video')
+flags.DEFINE_string('vid_dir', './', 'save path for video')
 flags.DEFINE_integer('n_episodes', -1, 'number of episodes to simulate')
 flags.DEFINE_bool('save_vid', False, 'whether or not to save episode rollout')
 flags.DEFINE_bool('debug', False, 'turn on debugging for simulator')
@@ -111,83 +113,128 @@ def save_vid(frames, vid_path):
   writer.close()
 
 def run_loaded_policy(env, tf_env, policy):
-  traj_len = 0
-  max_speed = 0.
+  max_speeds = []
+  mean_speeds = []
+  traj_lens = []
+  frames = []
   mean_vel = tf.keras.metrics.Mean(name='mean_vel')
-  time_step = tf_env.reset()
-  if FLAGS.save_vid:
-    img = env.render('rgb_array')
-    ax = plt.imshow(img)
-    plt.text(450, 15, '{:3.2f}'.format(env.unwrapped._current_vel))
-    frames = [img]
-  elif FLAGS.render:
-    env.render()
-  pol_state = policy.get_initial_state(1)
-  while not time_step.is_last():
-    action_step = policy.action(time_step, pol_state)
-    action, pol_state = action_step.action, action_step.state
-    time_step = tf_env.step(action)
+  ep_num = 0
+
+  while ep_num != FLAGS.n_episodes:
+    traj_len = 0
+    max_speed = 0.
+    time_step = tf_env.reset()
+    pol_state = policy.get_initial_state(1)
+    while not time_step.is_last():
+      if FLAGS.save_vid:
+        img = env.render('rgb_array')
+        if FLAGS.debug:
+          img = plot_with_current_vel(img, env.unwrapped.current_vel)
+        frames.append(img)
+      elif FLAGS.render:
+        env.render()
+      action_step = policy.action(time_step, pol_state)
+      action, pol_state = action_step.action, action_step.state
+      time_step = tf_env.step(action)
+      mean_vel.update_state(env.unwrapped.current_vel)
+      if abs(max_speed) < abs(env.unwrapped.current_vel):
+        max_speed = env.unwrapped.current_vel
+      traj_len += 1
+
     if FLAGS.save_vid:
-      frames.append(env.render('rgb_array'))
+      img = env.render('rgb_array')
+      if FLAGS.debug:
+        img = plot_with_current_vel(img, env.unwrapped.current_vel)
+      frames.append(img)
     elif FLAGS.render:
       env.render()
-    if traj_len > 100:
-      mean_vel.update_state(env.unwrapped._current_vel)
-    if abs(max_speed) < abs(env.unwrapped._current_vel):
-      max_speed = env.unwrapped._current_vel
-    traj_len += 1
-  if FLAGS.debug:
-    logging.info('ran %s steps', traj_len)
+
+    ep_num += 1
+    traj_lens.append(traj_len)
+    max_speeds.append(max_speed)
+    mean_speeds.append(mean_vel.result().numpy())
+    mean_vel.reset_states()
+    if FLAGS.debug:
+      logging.info('Ep %d ran %d steps', ep_num, traj_len)
+
   if FLAGS.save_vid:
     i = 0
-    vid_path = lambda: osp.join(FLAGS.vid_dir,
-                                'episode-{}.mp4'.format(i))
+    vid_path = lambda: osp.join(FLAGS.vid_dir, 'episode-{}.mp4'.format(i))
     while osp.exists(vid_path()):
       i += 1
     vid_path = vid_path()
     save_vid(frames, vid_path)
-  mean_vel_ = mean_vel.result().numpy()
-  mean_vel.reset_states()
-  return max_speed, mean_vel_, traj_len
+  return max_speeds, mean_speeds, traj_lens
+
+def plot_with_current_vel(img, current_vel):
+  fig = Figure(figsize=(4.8, 3.6), dpi=100)
+  canvas = FigureCanvas(fig)
+  ax = fig.gca()
+  ax.imshow(img)
+  ax.text(430 , 345, '{:3.2f}'.format(current_vel))
+  ax.axis('off')
+  canvas.draw()
+  s, (width, height) = canvas.print_to_buffer()
+  img = np.fromstring(s, dtype='uint8').reshape((height, width, 4))
+  plt.close(fig)
+  return img
 
 def run_random_policy(env):
-  env.reset()
-  d = False
-  max_speed = 0.
+  max_speeds = []
+  mean_speeds = []
+  traj_lens = []
   mean_vel = tf.keras.metrics.Mean(name='mean_vel')
-  traj_len = 0
-  while not d:
-    env.render()
-    o, r, d, i = env.step(env.action_space.sample())
-    if abs(max_speed) < abs(env.unwrapped._current_vel):
-      max_speed = env.unwrapped._current_vel
-    mean_vel.update_state(env.unwrapped._current_vel)
-    traj_len += 1
-  mean_vel_ = mean_vel.result().numpy()
-  mean_vel.reset_states()
-  return max_speed, mean_vel_, traj_len
+  frames = []
+
+  ep_num = 0
+  while ep_num != FLAGS.n_episodes:
+    d = False
+    traj_len = 0
+    max_speed = 0.
+    env.reset()
+    while not d:
+      if FLAGS.render:
+        env.render()
+      elif FLAGS.save_vid:
+        img = env.render('rgb_array')
+        if FLAGS.debug:
+          img = plot_with_current_vel(img, env.unwrapped.current_vel)
+        frames.append(img)
+      o, r, d, i = env.step(env.action_space.sample())
+      if abs(max_speed) < abs(env.unwrapped.current_vel):
+        max_speed = env.unwrapped.current_vel
+      mean_vel.update_state(env.unwrapped.current_vel)
+      traj_len += 1
+
+    if FLAGS.save_vid:
+      img = env.render('rgb_array')
+      if FLAGS.debug:
+        img = plot_with_current_vel(img, env.unwrapped.current_vel)
+      frames.append(img)
+    ep_num += 1
+    traj_lens.append(traj_len)
+    max_speeds.append(max_speed)
+    mean_speeds.append(mean_vel.result().numpy())
+    mean_vel.reset_states()
+  if FLAGS.save_vid:
+    i = 0
+    vid_path = lambda: osp.join(FLAGS.vid_dir, 'episode-{}.mp4'.format(i))
+    while osp.exists(vid_path()):
+      i += 1
+    vid_path = vid_path()
+    save_vid(frames, vid_path)
+  return max_speeds, mean_speeds, traj_lens
 
 def run_episodes():
   env = gym.make('MinitaurGoalVelocityEnv-v0', render=FLAGS.render,
                  debug=FLAGS.debug)
-  max_speeds = []
-  mean_speeds = []
-  traj_lens = []
   try:
-    i = 0
     if FLAGS.random_policy:
-      run_episode = lambda: run_random_policy(env)
+      max_speeds, mean_speeds, traj_lens = run_random_policy(env)
     else:
       tf_env = tf_py_environment.TFPyEnvironment(gym_wrapper.GymWrapper(env))
       policy = load_policy(tf_env)
-      run_episode = lambda: run_loaded_policy(env, tf_env, policy)
-    while i != FLAGS.n_episodes:
-      ret = run_episode()
-      i += 1
-      max_speed, mean_speed, traj_len = ret
-      max_speeds.append(max_speed)
-      mean_speeds.append(mean_speed)
-      traj_lens.append(traj_len)
+      max_speeds, mean_speeds, traj_lens = run_loaded_policy(env, tf_env, policy)
   except KeyboardInterrupt:
     logging.info('Exiting')
     env.close()

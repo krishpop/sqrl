@@ -57,6 +57,10 @@ class MinitaurGoalVelocityEnv(minitaur_extended_env.MinitaurExtendedEnv):
     self._max_steps = max_steps
     super(MinitaurGoalVelocityEnv, self).__init__(**kwargs)
 
+  @property
+  def current_vel(self):
+    return self._current_vel
+
   def _termination(self):
     """Determines whether the env is terminated or not.
 
