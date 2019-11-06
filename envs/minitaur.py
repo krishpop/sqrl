@@ -29,22 +29,33 @@ import numpy as np
 
 from pybullet_envs.minitaur.envs import minitaur_extended_env
 
+ENV_DEFAULTS = {
+  "accurate_motor_model_enabled": True,
+  "never_terminate": False,
+  "history_length": 5,
+  "urdf_version": "rainbow_dash_v0",
+  "history_include_actions": True,
+  "control_time_step": 0.02,
+  "history_include_states": True,
+  "include_leg_model": True
+}
 
 @gin.configurable
-class MinitaurTargetVelocityEnv(minitaur_extended_env.MinitaurExtendedEnv):
+class MinitaurGoalVelocityEnv(minitaur_extended_env.MinitaurExtendedEnv):
   """The 'extended' minitaur env with a target velocity."""
 
   def __init__(self,
-               target_velocity=0.3,
-               max_velocity=0.5,
+               goal_sampler=lambda: 0.3,
+               goal_limit=0.5,
                max_steps=500,
-               history_length=6,
+               debug=False,
                **kwargs):
-    self._target_velocity = target_velocity
-    self._max_velocity = max_velocity
+    self.set_sample_goal_args(goal_limit, goal_sampler)
+    self._goal_vel = None
+    self._current_vel = 0.
+    self._debug = debug
     self._max_steps = max_steps
-    super(MinitaurTargetVelocityEnv, self).__init__(
-        never_terminate=False, history_length=history_length, **kwargs)
+    super(MinitaurGoalVelocityEnv, self).__init__(**kwargs)
 
   def _termination(self):
     """Determines whether the env is terminated or not.
@@ -57,7 +68,7 @@ class MinitaurTargetVelocityEnv(minitaur_extended_env.MinitaurExtendedEnv):
     if self._never_terminate:
       return False
 
-    leg_model = self._convert_to_leg_model(self.minitaur.GetMotorAngles())
+    leg_model = self.convert_to_leg_model(self.minitaur.GetMotorAngles())
     swing0 = leg_model[0]
     swing1 = leg_model[2]
     maximum_swing_angle = 0.8
@@ -69,6 +80,16 @@ class MinitaurTargetVelocityEnv(minitaur_extended_env.MinitaurExtendedEnv):
 
     return self.is_fallen()  # terminates automatically when in fallen state
 
+  def set_sample_goal_args(self, goal_limit=0.5, goal_sampler=lambda: 0.3):
+    self._goal_limit = goal_limit
+    if not callable(goal_sampler):
+      goal_sampler = lambda: float(goal_sampler)
+    self._goal_sampler = goal_sampler
+
+  def reset(self):
+    self._goal_vel = self._goal_sampler()
+    return super(MinitaurGoalVelocityEnv, self).reset()
+
   def reward(self):
     """Compute rewards for the given time step.
 
@@ -79,10 +100,9 @@ class MinitaurTargetVelocityEnv(minitaur_extended_env.MinitaurExtendedEnv):
     """
     current_base_position = self.minitaur.GetBasePosition()
     dt = self.control_time_step
-    velocity = (current_base_position[0] - self._last_base_position[0]) / dt
-    vel_clip = np.clip(velocity, -self._max_velocity, self._max_velocity)
-    velocity_reward = self._target_velocity - np.abs(self._target_velocity -
-                                                     vel_clip)
+    self._current_vel = velocity = (current_base_position[0] - self._last_base_position[0]) / dt
+    vel_clip = np.clip(velocity, -self._goal_limit, self._goal_limit)
+    velocity_reward = self._goal_vel - np.abs(self._goal_vel - vel_clip)
 
     action = self._past_actions[self._counter - 1]
     prev_action = self._past_actions[max(self._counter - 2, 0)]
@@ -92,6 +112,10 @@ class MinitaurTargetVelocityEnv(minitaur_extended_env.MinitaurExtendedEnv):
 
     reward = 0.0
     reward += 1.0 * velocity_reward
-    reward -= 0.02 * action_acceleration_penalty
+    reward -= 0.02 * action_acceleration_penalty  # TODO(krshna): lowering acceleration penalty, try 0.01, 0.002
+
+    if self._debug:
+      self.pybullet_client.addUserDebugText('Current velocity: {:3.2f}'.format(self._current_vel), [0, 0, 1],
+                                            [1, 0, 0])
 
     return reward

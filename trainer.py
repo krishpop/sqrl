@@ -26,7 +26,7 @@ import time
 
 from absl import flags
 from absl import logging
-from .algorithm import agents
+from .algos import agents
 import gin
 import tensorflow as tf
 from tf_agents.environments import tf_py_environment

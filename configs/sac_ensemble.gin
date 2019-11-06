@@ -1,0 +1,21 @@
+import gin.tf
+import tensorflow
+import tf_agents.agents.sac
+import tf_agents.environments.suite_pybullet
+import tf_agents.agents.ddpg.critic_network
+import tf_agents.networks.actor_distribution_network
+
+import envs.minitaur
+import algos.train_eval_ensemble
+import algos.ensemble_sac_agent
+
+include "safemrl/configs/sac.gin"
+
+train_eval_ensemble.train_eval.ensemble = True
+train_eval_ensemble.train_eval.n_critics = 3
+train_eval_ensemble.train_eval.num_iterations = 100000
+train_eval_ensemble.train_eval.debug_summaries = True
+
+train_eval_ensemble.train_eval.actor_learning_rate = 5e-5
+train_eval_ensemble.train_eval.critic_learning_rate = 1e-4
+train_eval_ensemble.train_eval.alpha_learning_rate = 1e-4

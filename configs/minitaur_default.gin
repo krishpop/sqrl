@@ -1,0 +1,10 @@
+import envs.minitaur
+
+minitaur.MinitaurGoalVelocityEnv.accurate_motor_model_enabled = True
+minitaur.MinitaurGoalVelocityEnv.never_terminate = False
+minitaur.MinitaurGoalVelocityEnv.history_length = 5
+minitaur.MinitaurGoalVelocityEnv.urdf_version = "rainbow_dash_v0"
+minitaur.MinitaurGoalVelocityEnv.history_include_actions = True
+minitaur.MinitaurGoalVelocityEnv.control_time_step = 0.02
+minitaur.MinitaurGoalVelocityEnv.history_include_states = True
+minitaur.MinitaurGoalVelocityEnv.include_leg_model = True

@@ -17,20 +17,10 @@
 
 from __future__ import absolute_import
 
-import gym
-from gym.envs import registration
-import minitaur
-import walker2d
-
-registration.register(
-    id='Walker2dMrl-v1',
-    entry_point=walker2d.Walker2dMrlEnv,
-    max_episode_steps=1000,
-)
-
-registration.register(
-    id='MinitaurTargetVelocityEnv-v0',
-    entry_point=minitaur.MinitaurTargetVelocityEnv,
-    max_episode_steps=1000,
-    reward_threshold=5.0,
+from gym.envs.registration import register
+from . import minitaur
+register(
+    id="MinitaurGoalVelocityEnv-v0",
+    entry_point=minitaur.MinitaurGoalVelocityEnv,
+    max_episode_steps=500
 )
