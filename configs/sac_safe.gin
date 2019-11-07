@@ -1,0 +1,59 @@
+import gin.tf
+import gin.tf.external_configurables
+import tf_agents.agents.sac
+import tf_agents.environments.suite_pybullet
+import tf_agents.agents.ddpg.critic_network
+import tf_agents.networks.actor_distribution_network
+import tf_agents.drivers.dynamic_step_driver
+import tf_agents.metrics.tf_py_metric
+import tf_agents.metrics.py_metrics
+
+import safemrl.trainer
+import safemrl.utils.external_configurables
+import safemrl.algos.ensemble_sac_agent
+import safemrl.algos.safe_sac_agent
+import safemrl.envs.minitaur
+import safemrl.algos.agents
+
+ENV_STR = "MinitaurGoalVelocityEnv-v0"
+LEARNING_RATE = 3e-4
+SLOW_LEARNING_RATE = 1e-5
+
+trainer.train_eval.env_name = %ENV_STR
+trainer.train_eval.env_load_fn = @suite_pybullet.load
+suite_pybullet.load.gym_env_wrappers = (@minitaur.TaskAgnWrapper,)
+trainer.train_eval.agent_class = @safe_sac_agent.SafeSacAgent
+trainer.train_eval.keep_rb_checkpoint = True
+
+actor_distribution_network.ActorDistributionNetwork.preprocessing_combiner = (
+    @agents.extract_observation_layer()
+)
+agents.CriticNetwork.preprocessing_combiner = (
+    @agents.extract_obs_merge_w_ac_layer()
+)
+
+safe_sac_agent.SafeSacAgent.reward_scale_factor = 10.0
+safe_sac_agent.SafeSacAgent.actor_optimizer = @ac_opt/tf.keras.optimizers.Adam()
+safe_sac_agent.SafeSacAgent.gamma = 0.99
+ac_opt/tf.keras.optimizers.Adam.learning_rate = %LEARNING_RATE
+safe_sac_agent.SafeSacAgent.critic_optimizer = @cr_opt/tf.keras.optimizers.Adam()
+cr_opt/tf.keras.optimizers.Adam.learning_rate = %SLOW_LEARNING_RATE
+safe_sac_agent.SafeSacAgent.alpha_optimizer = @al_opt/tf.keras.optimizers.Adam()
+al_opt/tf.keras.optimizers.Adam.learning_rate = %SLOW_LEARNING_RATE
+safe_sac_agent.SafeSacAgent.safety_critic_optimizer = @sc_opt/tf.keras.optimizers.Adam()
+sc_opt/tf.keras.optimizers.Adam.learning_rate = %SLOW_LEARNING_RATE
+
+trainer.train_eval.initial_collect_driver_class = @init_collect/dynamic_step_driver.DynamicStepDriver
+init_collect/dynamic_step_driver.DynamicStepDriver.num_steps = 500
+trainer.train_eval.collect_driver_class = @collect_driver/dynamic_step_driver.DynamicStepDriver
+collect_driver/dynamic_step_driver.DynamicStepDriver.num_steps = 1
+
+trainer.train_eval.online_critic = False
+# safe_sac_agent.SafeSacAgent.resample_metric = @resample_metric/tf_py_metric.TFPyMetric()
+# resample_metric/tf_py_metric.TFPyMetric.py_metric = @cm/py_metrics.CounterMetric()
+# cm/py_metrics.CounterMetric.name = "unsafe_ac_samples"
+
+# train_eval_ensemble.train_eval.gradient_clipping = 1.
+# train_eval_ensemble.train_eval.actor_learning_rate = %SLOW_LEARNING_RATE
+
+# sac.sac_agent.actor_net = @actor_distribution_network.ActorDistributionNetwork()

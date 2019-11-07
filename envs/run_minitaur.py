@@ -15,8 +15,8 @@ from tf_agents.utils import common
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from matplotlib.figure import Figure
 
-import envs
-import algos
+import safemrl.envs
+import safemrl.algos
 import matplotlib.pyplot as plt
 
 from absl import app
@@ -239,12 +239,13 @@ def run_episodes():
     logging.info('Exiting')
     env.close()
 
-  logging.info('max speeds (mean, min, max, std): %s, %s, %s, %s', np.mean(max_speeds), np.min(max_speeds),
-        np.max(max_speeds), np.std(max_speeds))
-  logging.info('mean speeds (mean, min, max, std): %s, %s, %s, %s', np.mean(mean_speeds), np.min(mean_speeds),
-               np.max(mean_speeds), np.std(mean_speeds))
-  logging.info('traj lens (mean, min, max, std): %s, %s, %s, %s', np.mean(traj_lens), np.min(traj_lens),
-        np.max(traj_lens), np.std(traj_lens))
+  if FLAGS.debug:
+    logging.info('max speeds (mean, min, max, std): %s, %s, %s, %s', np.mean(max_speeds), np.min(max_speeds),
+          np.max(max_speeds), np.std(max_speeds))
+    logging.info('mean speeds (mean, min, max, std): %s, %s, %s, %s', np.mean(mean_speeds), np.min(mean_speeds),
+                 np.max(mean_speeds), np.std(mean_speeds))
+    logging.info('traj lens (mean, min, max, std): %s, %s, %s, %s', np.mean(traj_lens), np.min(traj_lens),
+          np.max(traj_lens), np.std(traj_lens))
 
 
 def main(_):
@@ -252,6 +253,8 @@ def main(_):
   gin.parse_config_files_and_bindings(
     FLAGS.gin_file, FLAGS.gin_param, skip_unknown=True)
   run_episodes()
+  if FLAGS.debug:
+    print(gin.operative_config_str())
 
 
 if __name__ == "__main__":

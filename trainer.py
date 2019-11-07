@@ -26,18 +26,27 @@ import time
 
 from absl import flags
 from absl import logging
-from .algos import agents
+
 import gin
 import tensorflow as tf
+from tf_agents.agents.ddpg import critic_network
+from tf_agents.agents.sac import sac_agent
 from tf_agents.environments import tf_py_environment
 from tf_agents.eval import metric_utils
 from tf_agents.metrics import py_metrics
 from tf_agents.metrics import tf_metrics
 from tf_agents.metrics import tf_py_metric
+from tf_agents.networks import actor_distribution_network
+from tf_agents.networks import normal_projection_network
 from tf_agents.policies import random_tf_policy
 from tf_agents.replay_buffers import tf_uniform_replay_buffer
 from tf_agents.utils import common
-from .utils import misc
+
+from safemrl.algos import agents
+from safemrl.algos import safe_sac_agent
+from safemrl.algos import ensemble_sac_agent
+from safemrl import envs
+from safemrl.utils import misc
 
 
 FLAGS = flags.FLAGS
@@ -52,7 +61,21 @@ TERMINATE_AFTER_DIVERGED_LOSS_STEPS = 100
 
 
 @gin.configurable
-def train(
+def normal_projection_net(action_spec,
+                          init_action_stddev=0.35,
+                          init_means_output_factor=0.1):
+  del init_action_stddev
+  return normal_projection_network.NormalProjectionNetwork(
+      action_spec,
+      mean_transform=None,
+      state_dependent_std=True,
+      init_means_output_factor=init_means_output_factor,
+      std_transform=sac_agent.std_clip_transform,
+      scale_distribution=True)
+
+
+@gin.configurable
+def train_eval(
     root_dir,
     load_root_dir=None,
     env_load_fn=None,
@@ -65,19 +88,26 @@ def train(
     num_global_steps=1000000,
     train_steps_per_iteration=1,
     train_metrics=None,
+    # Params for SacAgent args
+    actor_fc_layers=(256, 256),
+    # critic_obs_fc_layers=None,
+    # critic_action_fc_layers=None,
+    critic_joint_fc_layers=(256, 256),
     # Safety Critic training args
     train_sc_steps=10,
     train_sc_interval=300,
     online_critic=False,
+    # Params for train
+    batch_size=256,
     # Params for eval
     run_eval=False,
     num_eval_episodes=30,
-    eval_interval=1000,
+    eval_interval=10000,
     eval_metrics_callback=None,
     # Params for summaries and logging
     train_checkpoint_interval=10000,
     policy_checkpoint_interval=5000,
-    rb_checkpoint_interval=20000,
+    rb_checkpoint_interval=50000,
     keep_rb_checkpoint=False,
     log_interval=1000,
     summary_interval=1000,
@@ -122,17 +152,33 @@ def train(
     print('obs spec:', observation_spec)
     print('action spec:', action_spec)
 
-    if online_critic:
-      resample_metric = tf_py_metric.TfPyMetric(
-          py_metrics.CounterMetric('unsafe_ac_samples'))
+    actor_net = actor_distribution_network.ActorDistributionNetwork(
+      observation_spec,
+      action_spec,
+      fc_layer_params=actor_fc_layers,
+      continuous_projection_net=normal_projection_net)
+    critic_net = agents.CriticNetwork(
+      (observation_spec, action_spec),
+      joint_fc_layer_params=critic_joint_fc_layers)
+
+    if agent_class in [safe_sac_agent.SafeSacAgent, safe_sac_agent.SafeSacAgentOnline]:
+      safety_critic_net = agents.CriticNetwork(
+          (observation_spec, action_spec),
+          joint_fc_layer_params=critic_joint_fc_layers)
       tf_agent = agent_class(
           time_step_spec,
           action_spec,
-          train_step_counter=global_step,
-          resample_metric=resample_metric)
-    else:
+          actor_network=actor_net,
+          critic_network=critic_net,
+          safety_critic_network=safety_critic_net,
+          train_step_counter=global_step)
+    else:  # assume is using SacAgent
       tf_agent = agent_class(
-          time_step_spec, action_spec, train_step_counter=global_step)
+        time_step_spec,
+        action_spec,
+        actor_network=actor_net,
+        critic_network=critic_net,
+        train_step_counter=global_step)
 
     tf_agent.initialize()
 
@@ -142,14 +188,16 @@ def train(
     logging.info('Allocating replay buffer ...')
     # Add to replay buffer and other agent specific observers.
     replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
-        collect_data_spec, max_length=1000000)
+      collect_data_spec,
+      batch_size=1,
+      max_length=1000000)
     logging.info('RB capacity: %i', replay_buffer.capacity)
     logging.info('ReplayBuffer Collect data spec: %s', collect_data_spec)
 
     agent_observers = [replay_buffer.add_batch]
     if online_critic:
       online_replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
-          collect_data_spec, max_length=10000)
+          collect_data_spec, batch_size=1, max_length=10000)
 
       online_rb_ckpt_dir = os.path.join(train_dir, 'online_replay_buffer')
       online_rb_checkpointer = common.Checkpointer(
@@ -253,11 +301,11 @@ def train(
 
     # Dataset generates trajectories with shape [Bx2x...]
     dataset = replay_buffer.as_dataset(
-        num_parallel_calls=3, num_steps=2).prefetch(3)
+        num_parallel_calls=3, sample_batch_size=batch_size, num_steps=2).prefetch(3)
     iterator = iter(dataset)
     if online_critic:
       online_dataset = online_replay_buffer.as_dataset(
-          num_parallel_calls=3, num_steps=2).prefetch(3)
+          num_parallel_calls=3, sample_batch_size=batch_size, num_steps=2).prefetch(3)
       online_iterator = iter(online_dataset)
 
       @common.function

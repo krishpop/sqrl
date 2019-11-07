@@ -25,6 +25,7 @@ from __future__ import division
 from __future__ import print_function
 
 import gin
+import gym
 import numpy as np
 
 from pybullet_envs.minitaur.envs import minitaur_extended_env
@@ -72,17 +73,21 @@ class MinitaurGoalVelocityEnv(minitaur_extended_env.MinitaurExtendedEnv):
     if self._never_terminate:
       return False
 
+    if self._counter >= self._max_steps:
+      return True
+
+    return self.is_fallen()  # terminates automatically when in fallen state
+
+  def is_fallen(self):
+    if super(MinitaurGoalVelocityEnv, self).is_fallen():
+      return True
     leg_model = self.convert_to_leg_model(self.minitaur.GetMotorAngles())
     swing0 = leg_model[0]
     swing1 = leg_model[2]
     maximum_swing_angle = 0.8
     if swing0 > maximum_swing_angle or swing1 > maximum_swing_angle:
       return True
-
-    if self._counter >= self._max_steps:
-      return True
-
-    return self.is_fallen()  # terminates automatically when in fallen state
+    return False
 
   def set_sample_goal_args(self, goal_limit=0.5, goal_sampler=lambda: 0.3):
     self._goal_limit = goal_limit
@@ -123,3 +128,24 @@ class MinitaurGoalVelocityEnv(minitaur_extended_env.MinitaurExtendedEnv):
                                             [1, 0, 0])
 
     return reward
+
+
+@gin.configurable
+class TaskAgnWrapper(gym.Wrapper):
+  def __init__(self, env):
+    super(TaskAgnWrapper, self).__init__(env)
+    self.observation_space = gym.spaces.Dict({
+      'observation': self.observation_space,
+      'task_agn_reward': gym.spaces.Box(np.array(0), np.array(1))
+    })
+
+  def step(self, action):
+    o, r, d, i = super(TaskAgnWrapper, self).step(action)
+    o_dict = {'observation': o, 'task_agn_reward': 0.}
+    if d and self.unwrapped.is_fallen():
+      o_dict['task_agn_reward'] = 1.
+    return o_dict, r, d, i
+
+  def reset(self):
+    o = super(TaskAgnWrapper, self).reset()
+    return {'observation': o, 'task_agn_reward': 0.}

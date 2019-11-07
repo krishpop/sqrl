@@ -5,22 +5,21 @@ import tf_agents.environments.suite_pybullet
 import tf_agents.agents.ddpg.critic_network
 import tf_agents.networks.actor_distribution_network
 
-import envs.minitaur
-import algos.train_eval_ensemble
-import algos.ensemble_sac_agent
+import safemrl.algos.train_eval
+import safemrl.algos.ensemble_sac_agent
 
 ENV_STR = "MinitaurGoalVelocityEnv-v0"
 LEARNING_RATE = 3e-4
 SLOW_LEARNING_RATE = 1e-5
 
-train_eval_ensemble.train_eval.ensemble = False
-train_eval_ensemble.train_eval.env_name = %ENV_STR
-train_eval_ensemble.train_eval.env_load_fn = @suite_pybullet.load
-train_eval_ensemble.train_eval.reward_scale_factor = 10.0
-train_eval_ensemble.train_eval.actor_learning_rate = %LEARNING_RATE
-train_eval_ensemble.train_eval.critic_learning_rate = %SLOW_LEARNING_RATE
-train_eval_ensemble.train_eval.alpha_learning_rate = %SLOW_LEARNING_RATE
-train_eval_ensemble.train_eval.initial_collect_steps = 500
+train_eval.train_eval.ensemble = False
+train_eval.train_eval.env_name = %ENV_STR
+train_eval.train_eval.env_load_fn = @suite_pybullet.load
+train_eval.train_eval.reward_scale_factor = 10.0
+train_eval.train_eval.actor_learning_rate = %LEARNING_RATE
+train_eval.train_eval.critic_learning_rate = %SLOW_LEARNING_RATE
+train_eval.train_eval.alpha_learning_rate = %SLOW_LEARNING_RATE
+train_eval.train_eval.initial_collect_steps = 500
 
 # train_eval_ensemble.train_eval.gradient_clipping = 1.
 # train_eval_ensemble.train_eval.actor_learning_rate = %SLOW_LEARNING_RATE

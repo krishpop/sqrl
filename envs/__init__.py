@@ -17,10 +17,19 @@
 
 from __future__ import absolute_import
 
+import gym
+from safemrl.envs import minitaur
 from gym.envs.registration import register
-from . import minitaur
-register(
-    id="MinitaurGoalVelocityEnv-v0",
-    entry_point=minitaur.MinitaurGoalVelocityEnv,
-    max_episode_steps=500
-)
+
+registered = False
+for env in gym.envs.registry.env_specs:
+    if "MinitaurGoalVelocityEnv-v0" in env:
+        registered = True
+        break
+
+if not registered:
+    register(
+        id="MinitaurGoalVelocityEnv-v0",
+        entry_point=minitaur.MinitaurGoalVelocityEnv,
+        max_episode_steps=500
+    )

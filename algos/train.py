@@ -5,7 +5,7 @@ import tensorflow as tf
 from absl import app
 from absl import flags
 from absl import logging
-from algos.train_eval_ensemble import train_eval
+from algos.train_eval import train_eval
 from comet_ml import Experiment
 
 

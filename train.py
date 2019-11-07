@@ -32,14 +32,23 @@ from absl import flags
 from absl import logging
 import gin
 import tensorflow as tf
+import wandb
 
-
+from safemrl import trainer
 
 flags.DEFINE_string('root_dir', None,
                     'Root directory for writing logs/summaries/checkpoints.')
 flags.DEFINE_multi_string('gin_file', None, 'Paths to the study config files.')
 flags.DEFINE_multi_string('gin_bindings', None, 'Gin binding to pass through.')
+flags.DEFINE_boolean('wandb', False, 'Whether or not to log experiment to wandb')
 FLAGS = flags.FLAGS
+
+
+def gin_to_config(config_str):
+  bindings = [b for b in config_str.split('\n') if ' = ' in b]
+  config_dict = {}
+  for b in bindings:
+    key, formatted_val = b.split(' = ')
 
 
 def main(_):
@@ -51,8 +60,16 @@ def main(_):
   logging.info('parsing config files: %s', FLAGS.gin_file)
   gin.parse_config_files_and_bindings(
       FLAGS.gin_file, FLAGS.gin_bindings, skip_unknown=True)
+  metrics_callback = None
+  if FLAGS.wandb:
+    wandb.init(sync_tensorboard=True)
+    metric_name = "Metrics/AverageReturn"  #TODO(krshna): Turn into a flag?
+    def metrics_callback(results, step):
+      metric_val = results[metric_name]
 
-  trainer.train(root_dir, eval_metrics_callback=metrics_callback)
+
+
+  trainer.train_eval(FLAGS.root_dir, eval_metrics_callback=metrics_callback)
 
 
 if __name__ == '__main__':

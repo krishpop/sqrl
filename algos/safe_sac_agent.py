@@ -27,7 +27,6 @@ from __future__ import print_function
 
 import collections
 
-from . import agents
 from absl import logging  # pylint: disable=unused-import
 import gin
 import numpy as np  # pylint: disable=unused-import
@@ -36,11 +35,12 @@ import tensorflow_probability as tfp
 from tf_agents.agents import tf_agent
 from tf_agents.agents.sac import sac_agent
 from tf_agents.policies import actor_policy
-from tf_agents.specs import tensor_spec  # pylint: disable=unused-import
 from tf_agents.trajectories import trajectory
 from tf_agents.utils import common
 from tf_agents.utils import eager_utils
 from tf_agents.utils import nest_utils
+
+from safemrl.algos import agents
 
 SafeSacLossInfo = collections.namedtuple(
     'SafeSacLossInfo',
@@ -86,10 +86,6 @@ class SafeSacAgent(sac_agent.SacAgent):
                train_step_counter=None,
                name=None):
 
-    self._safety_critic_network = safety_critic_network
-    if safety_critic_network is not None:
-      self._safety_critic_network.create_variables()
-
     super(SafeSacAgent,
           self).__init__(time_step_spec, action_spec, critic_network,
                          actor_network, actor_optimizer, critic_optimizer,
@@ -101,6 +97,12 @@ class SafeSacAgent(sac_agent.SacAgent):
                          debug_summaries, summarize_grads_and_vars,
                          train_step_counter, name)
 
+    self._safety_critic_network = safety_critic_network
+    if safety_critic_network is not None:
+      self._safety_critic_network.create_variables()
+    else:
+      self._safety_critic_network = common.maybe_copy_target_network_with_checks(
+          critic_network, None, 'SafetyCriticNetwork')
     self._safety_critic_optimizer = safety_critic_optimizer
     self._safe_td_errors_loss_fn = safe_td_errors_loss_fn
 
@@ -144,13 +146,12 @@ class SafeSacAgent(sac_agent.SacAgent):
 
   @common.function
   def _experience_to_transitions(self, experience):
-    boundary_mask = nest_utils.where(
-        tf.logical_not(experience.is_boundary()),
-        tf.ones(nest_utils.get_outer_shape(experience, self.collect_data_spec)),
-        tf.zeros(
-            nest_utils.get_outer_shape(experience, self.collect_data_spec)))
-    experience = nest_utils.fast_map_structure(
-        lambda *x: tf.boolean_mask(boundary_mask, x), *experience)
+    # boundary_mask = nest_utils.where(
+    #     tf.logical_not(experience.is_boundary()),
+    #     tf.ones(nest_utils.get_outer_shape(experience, self.collect_data_spec)),
+    #     tf.zeros(nest_utils.get_outer_shape(experience, self.collect_data_spec)))
+    # experience = nest_utils.fast_map_structure(
+    #     lambda *x: tf.boolean_mask(x, boundary_mask), *experience)
     transitions = trajectory.to_transition(experience)
     time_steps, policy_steps, next_time_steps = transitions
     actions = policy_steps.action
@@ -595,10 +596,8 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
                safety_pretraining=False,
                resample_metric=None,
                name=None):
-    if safety_critic_network is not None:
-      self._safety_critic_network = safety_critic_network
+    self._safety_critic_network = safety_critic_network
     self._train_critic_online = train_critic_online
-    self._safety_critic_network.create_variables()
 
     super(SafeSacAgentOnline,
           self).__init__(time_step_spec, action_spec, critic_network,
@@ -610,6 +609,13 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
                          initial_log_alpha, target_entropy, gradient_clipping,
                          debug_summaries, summarize_grads_and_vars,
                          train_step_counter, name)
+
+    if safety_critic_network is not None:
+      self._safety_critic_network.create_variables()
+    else:
+      self._safety_critic_network = common.maybe_copy_target_network_with_checks(
+        critic_network, None, 'SafetyCriticNetwork'
+      )
 
     self._log_lambda = common.create_variable(
         'initial_log_lambda',

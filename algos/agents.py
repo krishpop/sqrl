@@ -32,11 +32,11 @@ from tf_agents.networks import encoding_network
 from tf_agents.networks import network
 from tf_agents.policies import actor_policy
 from tf_agents.policies import boltzmann_policy
-from tf_agents.spec import tensor_spec
+from tf_agents.specs import tensor_spec
 from tf_agents.utils import nest_utils
 
 
-def process_replay_buffer(replay_buffer, max_ep_len=500, k=1, as_tensor=False):
+def process_replay_buffer(replay_buffer, max_ep_len=500, k=1, as_tensor=True):
   """Process replay buffer to infer safety rewards with episode boundaries."""
   rb_data = replay_buffer.gather_all()
   rew = rb_data.reward
