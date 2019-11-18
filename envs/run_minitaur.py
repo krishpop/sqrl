@@ -32,7 +32,6 @@ flags.DEFINE_bool('save_vid', False, 'whether or not to save episode rollout')
 flags.DEFINE_bool('debug', False, 'turn on debugging for simulator')
 flags.DEFINE_bool('render', False, 'turn on rendering for simulator')
 flags.DEFINE_bool('random_policy', False, 'whether or not to run random policy')
-flags.DEFINE_string('urdf', 'rainbow_dash_v0', 'urdf file to  use when loading env')
 flags.DEFINE_integer('history_length', 6, 'number of past obs to include in state')
 flags.DEFINE_multi_string('gin_file', None, 'Paths to the study config files.')
 flags.DEFINE_multi_string('gin_param', None, 'Gin binding to pass through.')
@@ -55,7 +54,7 @@ def normal_projection_net(action_spec,
       scale_distribution=True)
 
 
-def load_policy(tf_env):
+def load_policy(agent_class, tf_env):
   load_dir = FLAGS.load_dir
   assert load_dir and osp.exists(load_dir), 'need to provide valid load_dir to load policy, got: {}'.format(load_dir)
   global_step = tf.compat.v1.train.get_or_create_global_step()

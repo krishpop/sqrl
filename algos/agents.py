@@ -28,12 +28,17 @@ import collections
 import gin
 import numpy as np
 import tensorflow as tf
+from tf_agents.agents.sac import sac_agent
 from tf_agents.networks import encoding_network
 from tf_agents.networks import network
 from tf_agents.policies import actor_policy
 from tf_agents.policies import boltzmann_policy
 from tf_agents.specs import tensor_spec
 from tf_agents.utils import nest_utils
+from tf_agents.utils import common
+from tf_agents.networks import normal_projection_network
+from tf_agents.networks import utils
+from tf_agents.distributions import utils as dist_utils
 
 
 def process_replay_buffer(replay_buffer, max_ep_len=500, k=1, as_tensor=True):
@@ -80,10 +85,134 @@ def extract_observation_layer():
   return tf.keras.layers.Lambda(lambda obs: obs['observation'])
 
 
-# CriticNetwork constructed with EncodingNetwork
+@gin.configurable
+def normal_projection_net(action_spec,
+                          init_action_stddev=0.35,
+                          init_means_output_factor=0.1):
+  del init_action_stddev
+  return normal_projection_network.NormalProjectionNetwork(
+      action_spec,
+      # mean_transform=None,
+      state_dependent_std=True,
+      init_means_output_factor=init_means_output_factor,
+      std_transform=sac_agent.std_clip_transform,
+      scale_distribution=False)
+
+
+@gin.configurable
+class CriticEncoderNetwork(network.Network):
+  """Critic Network with encoding networks for observation and action."""
+
+  def __init__(
+      self,
+      input_tensor_spec,
+      observation_preprocessing_combiner=None,
+      observation_conv_layer_params=None,
+      observation_fc_layer_params=None,
+      observation_dropout_layer_params=None,
+      action_fc_layer_params=None,
+      action_dropout_layer_params=None,
+      joint_preprocessing_combiner=None,
+      joint_fc_layer_params=None,
+      joint_dropout_layer_params=None,
+      kernel_initializer=tf.compat.v1.keras.initializers.VarianceScaling(
+          scale=1. / 3., mode='fan_in', distribution='uniform'),
+      activation_fn=tf.nn.relu,
+      name='CriticNetwork'):
+    """Creates an instance of `CriticNetwork`.
+
+    Args:
+      input_tensor_spec: A tuple of (observation, action) each a nest of
+        `tensor_spec.TensorSpec` representing the inputs.
+      joint_preprocessing_combiner: Combiner layer for obs and action inputs
+      joint_fc_layer_params: Optional list of fully connected parameters after
+        merging observations and actions, where each item is the number of units
+        in the layer.
+      joint_dropout_layer_params: Optional list of dropout layer parameters,
+        each item is the fraction of input units to drop or a dictionary of
+        parameters according to the keras.Dropout documentation. The additional
+        parameter `permanent', if set to True, allows to apply dropout at
+        inference for approximated Bayesian inference. The dropout layers are
+        interleaved with the fully connected layers; there is a dropout layer
+        after each fully connected layer, except if the entry in the list is
+        None. This list must have the same length of joint_fc_layer_params, or
+        be None.
+      kernel_initializer: Initializer to use for the kernels of the conv and
+        dense layers. If none is provided a default glorot_uniform
+      activation_fn: Activation function, e.g. tf.nn.relu, slim.leaky_relu, ...
+      name: A string representing name of the network.
+
+    Raises:
+      ValueError: If `observation_spec` or `action_spec` contains more than one
+        observation.
+    """
+    observation_spec, action_spec = input_tensor_spec
+
+    if (len(tf.nest.flatten(observation_spec)) > 1 and
+        joint_preprocessing_combiner is None and observation_preprocessing_combiner is None):
+      raise ValueError('Only a single observation is supported by this network')
+
+    flat_action_spec = tf.nest.flatten(action_spec)
+    if len(flat_action_spec) > 1:
+      raise ValueError('Only a single action is supported by this network')
+    self._single_action_spec = flat_action_spec[0]
+
+    preprocessing_layers = None
+    # combiner assumes a single batch dimension, without time
+
+    super(CriticNetwork, self).__init__(
+        input_tensor_spec=input_tensor_spec, state_spec=(), name=name)
+
+    if (observation_preprocessing_combiner or observation_conv_layer_params or
+        observation_fc_layer_params or observation_dropout_layer_params):
+      self._obs_encoder = encoding_network.EncodingNetwork(
+        observation_spec,
+        preprocessing_combiner=observation_preprocessing_combiner,
+        conv_layer_params=observation_conv_layer_params,
+        fc_layer_params=observation_fc_layer_params,
+        dropout_layer_params=observation_dropout_layer_params,
+        activation_fn=activation_fn,
+        kernel_initializer=kernel_initializer,
+        batch_squash=False)
+      observation_spec = tensor_spec.TensorSpec(self._obs_encoder._postprocessing_layers.output_shape,
+                                                name='obs_enc')
+    else:
+      self._obs_encoder = None
+
+    if (action_fc_layer_params or action_dropout_layer_params):
+      self._ac_encoder = encoding_network.EncodingNetwork(
+        action_spec,
+        fc_layer_params=action_fc_layer_params,
+        dropout_layer_params=action_dropout_layer_params,
+        activation_fn=activation_fn,
+        kernel_initializer=kernel_initializer,
+        batch_squash=False)
+      action_spec = tensor_spec.TensorSpec(self._ac_encoder._postprocessing_layers.output_shape,
+                                           name='ac_enc')
+    else:
+      self._ac_encoder = None
+
+    input_tensor_spec = (observation_spec, action_spec)
+    self._encoder = encoding_network.EncodingNetwork(
+        input_tensor_spec,
+        preprocessing_layers=None,
+        preprocessing_combiner=joint_preprocessing_combiner,
+        fc_layer_params=joint_fc_layer_params,
+        dropout_layer_params=joint_dropout_layer_params,
+        activation_fn=activation_fn,
+        kernel_initializer=kernel_initializer,
+        batch_squash=False)
+    self._value_layer = tf.keras.layers.Dense(
+        1,
+        activation=None,
+        kernel_initializer=tf.keras.initializers.RandomUniform(
+            minval=-0.003, maxval=0.003),
+        name='value')
+
+
 @gin.configurable
 class CriticNetwork(network.Network):
-  """Critic Network."""
+  """CriticNetwork implemented with encoder network"""
 
   def __init__(
       self,
@@ -175,15 +304,16 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
                info_spec=(),
                observation_normalizer=None,
                clip=True,
-               resample_metric=None,
+               resample_counter=None,
                name=None):
     super(SafeActorPolicyRSVar,
           self).__init__(time_step_spec, action_spec, actor_network, info_spec,
                          observation_normalizer, clip, name)
     self._safety_critic_network = safety_critic_network
     self._safety_threshold = safety_threshold
-    self._resample_metric = resample_metric
+    self._resample_counter = resample_counter
 
+  @common.function
   def _apply_actor_network(self, time_step, policy_state):
     has_batch_dim = time_step.step_type.shape.as_list()[0] > 1
     observation = time_step.observation
@@ -199,6 +329,12 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
     sampled_ac = actions.sample(50)
     obs = nest_utils.stack_nested_tensors(
         [time_step.observation for _ in range(50)])
+    obs_outer_rank = nest_utils.get_outer_rank(obs, self.time_step_spec.observation)
+    ac_outer_rank = nest_utils.get_outer_rank(sampled_ac, self.action_spec)
+    obs_batch_squash = utils.BatchSquash(obs_outer_rank)
+    ac_batch_squash = utils.BatchSquash(ac_outer_rank)
+    obs = tf.nest.map_structure(obs_batch_squash.flatten, obs)
+    sampled_ac = tf.nest.map_structure(ac_batch_squash.flatten, sampled_ac)
     q_val, _ = self._safety_critic_network((obs, sampled_ac),
                                            time_step.step_type)
     fail_prob = tf.nn.sigmoid(q_val)
@@ -207,27 +343,33 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
 
     resample_count = 0
     while resample_count < 4 and not safe_ac_idx.shape.as_list()[0]:
-      if self._resample_metric is not None:
-        self._resample_metric()
+      if self._resample_counter is not None:
+        self._resample_counter()
       resample_count += 1
-      scale = actions.scale * 1.5  # increase variance by constant 1.5
+      if isinstance(actions, dist_utils.SquashToSpecNormal):
+        scale = actions.action_magnitudes * 1.5  # increase variance by constant 1.5
+        ac_mean = actions.action_means
+      else:
+        scale = actions.scale * 1.5
+        ac_mean = actions.loc
       actions = self._actor_network.output_spec.build_distribution(
-          loc=actions.loc, scale=scale)
+          loc=ac_mean, scale=scale)
       sampled_ac = actions.sample(50)
+      sampled_ac = tf.nest.map_structure(ac_batch_squash.flatten, sampled_ac)
       q_val, _ = self._safety_critic_network((obs, sampled_ac),
                                              time_step.step_type)
 
       fail_prob = tf.nn.sigmoid(q_val)
-      safe_ac_idx = tf.where(tf.squeeze(fail_prob) < self._safety_threshold)
+      safe_ac_idx = tf.where(fail_prob < self._safety_threshold)
 
+    sampled_ac = ac_batch_squash.unflatten(sampled_ac)
     if not safe_ac_idx.shape.as_list()[0]:  # return safest action
-      safe_ac_idx = tf.math.argmin(fail_prob)
-      return sampled_ac[safe_ac_idx], policy_state
-
-    actions = tf.squeeze(tf.gather(sampled_ac, safe_ac_idx))
-    fail_prob_safe = tf.gather(fail_prob, safe_ac_idx)
-    safe_idx = tf.math.argmax(fail_prob_safe)
-    return actions[safe_idx], policy_state
+      safe_idx = tf.argmin(fail_prob)
+    else:
+      sampled_ac = tf.gather(sampled_ac, safe_ac_idx)
+      fail_prob_safe = tf.gather(fail_prob, safe_ac_idx)
+      safe_idx = tf.argmax(fail_prob_safe)
+    return sampled_ac[safe_idx], policy_state
 
 
 BoltzmannPolicyInfo = collections.namedtuple('BoltzmannPolicyInfo',

@@ -8,6 +8,8 @@ import tf_agents.networks.actor_distribution_network
 import safemrl.algos.train_eval
 import safemrl.algos.ensemble_sac_agent
 
+include 'minitaur_default.gin'
+
 ENV_STR = "MinitaurGoalVelocityEnv-v0"
 LEARNING_RATE = 3e-4
 SLOW_LEARNING_RATE = 1e-5

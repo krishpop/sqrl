@@ -8,7 +8,7 @@ import tf_agents.networks.actor_distribution_network
 import safemrl.algos.train_eval
 import safemrl.algos.ensemble_sac_agent
 
-include "safemrl/configs/sac.gin"
+include "sac.gin"
 
 train_eval.train_eval.ensemble = True
 train_eval.train_eval.n_critics = 3

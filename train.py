@@ -32,6 +32,7 @@ from absl import flags
 from absl import logging
 import gin
 import tensorflow as tf
+tf.compat.v1.enable_v2_behavior()
 import wandb
 
 from safemrl import trainer
@@ -39,8 +40,10 @@ from safemrl import trainer
 flags.DEFINE_string('root_dir', None,
                     'Root directory for writing logs/summaries/checkpoints.')
 flags.DEFINE_multi_string('gin_file', None, 'Paths to the study config files.')
-flags.DEFINE_multi_string('gin_bindings', None, 'Gin binding to pass through.')
+flags.DEFINE_multi_string('gin_param', None, 'Gin binding to pass through.')
+flags.DEFINE_boolean('debug', False, 'set log level to debug if True')
 flags.DEFINE_boolean('wandb', False, 'Whether or not to log experiment to wandb')
+
 FLAGS = flags.FLAGS
 
 
@@ -49,27 +52,35 @@ def gin_to_config(config_str):
   config_dict = {}
   for b in bindings:
     key, formatted_val = b.split(' = ')
-
+    config_dict[key] = gin.config.query_parameter(key)
+  return config_dict
 
 def main(_):
   logging.set_verbosity(logging.INFO)
-  tf.enable_v2_behavior()
-  tf.enable_resource_variables()
-  tf.enable_control_flow_v2()
   logging.info('Executing eagerly: %s', tf.executing_eagerly())
+  if os.environ.get('CONFIG_DIR'):
+    gin.add_config_file_search_path(os.environ.get('CONFIG_DIR'))
   logging.info('parsing config files: %s', FLAGS.gin_file)
   gin.parse_config_files_and_bindings(
-      FLAGS.gin_file, FLAGS.gin_bindings, skip_unknown=True)
+      FLAGS.gin_file, FLAGS.gin_param, skip_unknown=True)
   metrics_callback = None
   if FLAGS.wandb:
     wandb.init(sync_tensorboard=True)
-    metric_name = "Metrics/AverageReturn"  #TODO(krshna): Turn into a flag?
-    def metrics_callback(results, step):
+    global stop_training
+    stop_training = [False]
+    early_stopping_fn = lambda: stop_training[0]
+    @gin.configurable
+    def metrics_callback(results, step, metric_name="Metrics/AverageReturn"):
+      global stop_training
       metric_val = results[metric_name]
+      stop_training = True
+  else:
+    early_stopping_fn = lambda: False
+  if FLAGS.debug:
+    logging.set_verbosity(logging.DEBUG)
 
-
-
-  trainer.train_eval(FLAGS.root_dir, eval_metrics_callback=metrics_callback)
+  trainer.train_eval(FLAGS.root_dir, eval_metrics_callback=metrics_callback,
+                     early_termination_fn=early_stopping_fn, debug_summaries=FLAGS.debug)
 
 
 if __name__ == '__main__':

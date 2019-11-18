@@ -75,7 +75,7 @@ class SafeSacAgent(sac_agent.SacAgent):
                target_update_tau=1.0,
                target_update_period=1,
                td_errors_loss_fn=tf.math.squared_difference,
-               safe_td_errors_loss_fn=tf.losses.sigmoid_cross_entropy,
+               safe_td_errors_loss_fn=tf.keras.losses.binary_crossentropy,
                gamma=1.0,
                reward_scale_factor=1.0,
                initial_log_alpha=0.0,
@@ -134,7 +134,7 @@ class SafeSacAgent(sac_agent.SacAgent):
           time_steps,
           actions,
           next_time_steps,
-          safety_rewards=next_time_steps.observation['task_agn_reward'],
+          safety_rewards=next_time_steps.observation['task_agn_rew'],
           weights=weights)
 
       tf.debugging.check_numerics(safety_critic_loss, 'Critic loss is inf or '
@@ -143,17 +143,28 @@ class SafeSacAgent(sac_agent.SacAgent):
                                           trainable_safety_variables)
       self._apply_gradients(safety_critic_grads, trainable_safety_variables,
                             self._safety_critic_optimizer)
+    return safety_critic_loss
 
   @common.function
   def _experience_to_transitions(self, experience):
-    # boundary_mask = nest_utils.where(
-    #     tf.logical_not(experience.is_boundary()),
-    #     tf.ones(nest_utils.get_outer_shape(experience, self.collect_data_spec)),
-    #     tf.zeros(nest_utils.get_outer_shape(experience, self.collect_data_spec)))
-    # experience = nest_utils.fast_map_structure(
-    #     lambda *x: tf.boolean_mask(x, boundary_mask), *experience)
+    outer_shape = nest_utils.get_outer_shape(experience, self.collect_data_spec)
+    boundary_mask = nest_utils.where(
+        tf.logical_not(experience.is_boundary()),
+        tf.ones(outer_shape, dtype=tf.bool),
+        tf.zeros(outer_shape, dtype=tf.bool))
+    boundary_mask = tf.math.reduce_all(boundary_mask, axis=1)
+    experience = nest_utils.fast_map_structure(
+        lambda *x: tf.boolean_mask(*x, boundary_mask), experience
+    )
     transitions = trajectory.to_transition(experience)
+    flat_structure = [
+      tf.nest.flatten(s, expand_composites=False)
+      for s in experience]
+
     time_steps, policy_steps, next_time_steps = transitions
+    logging.debug('computed boundary mask shape: %s', boundary_mask.shape)
+    logging.debug('experience observation shape: %s', experience.observation['observation'].shape)
+
     actions = policy_steps.action
     if (self.train_sequence_length is not None and
         self.train_sequence_length == 2):
@@ -225,25 +236,7 @@ class SafeSacAgent(sac_agent.SacAgent):
     self._apply_gradients(alpha_grads, alpha_variable, self._alpha_optimizer)
 
     if self._safety_critic_network is not None:
-      trainable_safety_variables = (
-          self._safety_critic_network.trainable_variables)
-      with tf.GradientTape(watch_accessed_variables=False) as tape:
-        assert trainable_safety_variables, ('No trainable safety critic '
-                                            'variables to optimize.')
-        tape.watch(trainable_safety_variables)
-        safety_critic_loss = self.safety_critic_loss(
-            time_steps,
-            actions,
-            next_time_steps,
-            safety_rewards=next_time_steps.observation['task_agn_reward'],
-            weights=weights)
-
-        tf.debugging.check_numerics(safety_critic_loss, 'Critic loss is inf or '
-                                    'nan.')
-        safety_critic_grads = tape.gradient(safety_critic_loss,
-                                            trainable_safety_variables)
-        self._apply_gradients(safety_critic_grads, trainable_safety_variables,
-                              self._safety_critic_optimizer)
+      safety_critic_loss = self._train_safety_critic(experience, weights)
 
     with tf.name_scope('Losses'):
       tf.compat.v2.summary.scalar(
@@ -573,7 +566,7 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
                safety_critic_optimizer,
                alpha_optimizer,
                lambda_optimizer=None,
-               train_critic_online=False,
+               train_critic_online=True,
                actor_policy_ctor=actor_policy.ActorPolicy,
                safety_critic_network=None,
                critic_network_2=None,
@@ -582,7 +575,7 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
                target_update_tau=1.0,
                target_update_period=1,
                td_errors_loss_fn=tf.math.squared_difference,
-               safe_td_errors_loss_fn=tf.losses.sigmoid_cross_entropy,
+               safe_td_errors_loss_fn=tf.keras.losses.binary_crossentropy,
                gamma=1.0,
                reward_scale_factor=1.0,
                initial_log_alpha=0.0,
@@ -594,7 +587,7 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
                summarize_grads_and_vars=False,
                train_step_counter=None,
                safety_pretraining=False,
-               resample_metric=None,
+               resample_counter=None,
                name=None):
     self._safety_critic_network = safety_critic_network
     self._train_critic_online = train_critic_online
@@ -629,7 +622,7 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
         actor_network=self._actor_network,
         safety_critic_network=self._safety_critic_network,
         safety_threshold=self._target_safety,
-        resample_metric=resample_metric)
+        resample_counter=resample_counter)
 
     self._safety_critic_optimizer = safety_critic_optimizer
     self._lambda_optimizer = lambda_optimizer or alpha_optimizer
@@ -709,7 +702,7 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
       lambda_loss = self.lambda_loss(
           time_steps,
           actions,
-          safety_rewards=next_time_steps.observation['task_agn_reward'])
+          safety_rewards=next_time_steps.observation['task_agn_rew'])
     tf.debugging.check_numerics(lambda_loss, 'Lambda loss is inf or nan.')
     lambda_grads = tape.gradient(lambda_loss, lambda_variable)
     self._apply_gradients(lambda_grads, lambda_variable, self._lambda_optimizer)
@@ -787,7 +780,7 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
     if not self._train_critic_online:
       # update safety critic
       safety_critic_loss, lambda_loss = self.train_sc(
-          experience, experience.observation['task_agnostic_reward'], weights)
+          experience, experience.observation['task_agn_rew'], weights)
 
     with tf.name_scope('Losses'):
       tf.compat.v2.summary.scalar(
@@ -809,8 +802,12 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
 
     total_loss = critic_loss + actor_loss + alpha_loss
 
-    extra = SafeSacLossInfo(
-        critic_loss=critic_loss, actor_loss=actor_loss, alpha_loss=alpha_loss)
+    if not self._train_critic_online:
+      extra = SafeSacLossInfo(
+          critic_loss=critic_loss, actor_loss=actor_loss, alpha_loss=alpha_loss, safety_critic_loss=safety_critic_loss)
+    else:
+      extra = sac_agent.SacLossInfo(critic_loss=critic_loss, actor_loss=actor_loss,
+                                    alpha_loss=alpha_loss)
 
     return tf_agent.LossInfo(loss=total_loss, extra=extra)
 

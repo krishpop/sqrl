@@ -47,7 +47,7 @@ class MinitaurGoalVelocityEnv(minitaur_extended_env.MinitaurExtendedEnv):
 
   def __init__(self,
                goal_sampler=lambda: 0.3,
-               goal_limit=0.5,
+               goal_limit=0.8,
                max_steps=500,
                debug=False,
                **kwargs):
@@ -56,6 +56,8 @@ class MinitaurGoalVelocityEnv(minitaur_extended_env.MinitaurExtendedEnv):
     self._current_vel = 0.
     self._debug = debug
     self._max_steps = max_steps
+    if not kwargs:
+      kwargs = ENV_DEFAULTS
     super(MinitaurGoalVelocityEnv, self).__init__(**kwargs)
 
   @property
@@ -89,11 +91,13 @@ class MinitaurGoalVelocityEnv(minitaur_extended_env.MinitaurExtendedEnv):
       return True
     return False
 
-  def set_sample_goal_args(self, goal_limit=0.5, goal_sampler=lambda: 0.3):
-    self._goal_limit = goal_limit
-    if not callable(goal_sampler):
-      goal_sampler = lambda: float(goal_sampler)
-    self._goal_sampler = goal_sampler
+  def set_sample_goal_args(self, goal_limit=None, goal_sampler=None):
+    if goal_limit is not None:
+      self._goal_limit = goal_limit
+    if goal_sampler is not None:
+      if not callable(goal_sampler):
+        goal_sampler = lambda: float(goal_sampler)
+      self._goal_sampler = goal_sampler
 
   def reset(self):
     self._goal_vel = self._goal_sampler()
@@ -136,16 +140,16 @@ class TaskAgnWrapper(gym.Wrapper):
     super(TaskAgnWrapper, self).__init__(env)
     self.observation_space = gym.spaces.Dict({
       'observation': self.observation_space,
-      'task_agn_reward': gym.spaces.Box(np.array(0), np.array(1))
+      'task_agn_rew': gym.spaces.Box(np.array(0), np.array(1))
     })
 
   def step(self, action):
     o, r, d, i = super(TaskAgnWrapper, self).step(action)
-    o_dict = {'observation': o, 'task_agn_reward': 0.}
+    o_dict = {'observation': o, 'task_agn_rew': 0.}
     if d and self.unwrapped.is_fallen():
-      o_dict['task_agn_reward'] = 1.
+      o_dict['task_agn_rew'] = 1.
     return o_dict, r, d, i
 
-  def reset(self):
-    o = super(TaskAgnWrapper, self).reset()
-    return {'observation': o, 'task_agn_reward': 0.}
+  def reset(self, **kwargs):
+    o = super(TaskAgnWrapper, self).reset(**kwargs)
+    return {'observation': o, 'task_agn_rew': 0.}

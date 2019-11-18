@@ -31,6 +31,14 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 
 from tf_agents.utils import common
+from tf_agents.agents.sac import sac_agent
+from safemrl.algos import safe_sac_agent
+from safemrl.algos import ensemble_sac_agent
+from safemrl.algos import agents
+
+
+# def construct_tf_agent(agent_class):
+#   if agent_class
 
 
 def load_rb_ckpt(ckpt_dir, replay_buffer, ckpt_step=None):
@@ -99,7 +107,7 @@ def create_default_writer_and_save_dir(root_dir):
   return writer, save_dir
 
 
-def record_episode_vis_summary(tf_env, tf_policy, savepath=None):
+def record_well_episode_vis(tf_env, tf_policy, savepath=None):
   """Records summaries."""
   time_step = tf_env.reset()
   policy_state = tf_policy.get_initial_state()

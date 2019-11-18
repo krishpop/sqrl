@@ -1,5 +1,8 @@
 import safemrl.envs.minitaur
 
+EP_LEN = 500
+
+minitaur.MinitaurGoalVelocityEnv.max_steps = %EP_LEN
 minitaur.MinitaurGoalVelocityEnv.accurate_motor_model_enabled = True
 minitaur.MinitaurGoalVelocityEnv.never_terminate = False
 minitaur.MinitaurGoalVelocityEnv.history_length = 5
@@ -8,3 +11,5 @@ minitaur.MinitaurGoalVelocityEnv.history_include_actions = True
 minitaur.MinitaurGoalVelocityEnv.control_time_step = 0.02
 minitaur.MinitaurGoalVelocityEnv.history_include_states = True
 minitaur.MinitaurGoalVelocityEnv.include_leg_model = True
+
+minitaur.MinitaurGoalVelocityEnv.goal_limit = 0.8

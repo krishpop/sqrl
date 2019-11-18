@@ -121,8 +121,6 @@ def train_eval(
   train_dir = os.path.join(root_dir, 'train')
   if run_eval:
       eval_dir = os.path.join(root_dir, 'eval')
-  config_saver = gin.tf.GinConfigSaverHook(train_dir, summarize_config=True)
-  tf.function(config_saver.after_create_session)()
 
   train_summary_writer = tf.compat.v2.summary.create_file_writer(
       train_dir, flush_millis=summaries_flush_secs * 1000)
@@ -264,6 +262,9 @@ def train_eval(
         collect_policy,
         observers=replay_observer + train_metrics,
         num_steps=collect_steps_per_iteration)
+
+    config_saver = gin.tf.GinConfigSaverHook(train_dir, summarize_config=True)
+    tf.function(config_saver.after_create_session)()
 
     if use_tf_functions:
       initial_collect_driver.run = common.function(initial_collect_driver.run)
