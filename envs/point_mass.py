@@ -115,14 +115,14 @@ class PointMassEnv(gym.Env):
   """Class for 2D navigation in PointMass environment."""
 
   def __init__(self,
-               env_name='IndianWell',
-               start=None,
+               env_name='DrunkSpiderShort',
+               start=(0, 3),
                resize_factor=1,
-               action_noise=0.3,
+               action_noise=0.,
                action_scale=1.,
                start_bounds=None,
                alive_bonus=0.,
-               action_pen=False):
+               action_pen=0.):
     """Initialize the point environment.
 
     Args:
@@ -138,6 +138,7 @@ class PointMassEnv(gym.Env):
     """
     walls = env_name
     self._start = start if start is None else np.array(start, dtype=float)
+    self.state = self._start
 
     if resize_factor > 1:
       self._walls = resize_walls(WALLS[walls], resize_factor)
@@ -168,7 +169,7 @@ class PointMassEnv(gym.Env):
                 dtype=np.float32),
         'fallen':
             gym.spaces.Discrete(2),
-        'task_agn_reward':
+        'task_agn_rew':
             gym.spaces.Box(low=np.array(0), high=np.array(1))
     })
     self._validate_start_goal()
@@ -199,7 +200,7 @@ class PointMassEnv(gym.Env):
 
   def reset(self, reset_args=None):
     self.state = reset_args or self._sample_empty_state()
-    obs = dict(observation=self.state.copy(), fallen=False, task_agn_reward=0.)
+    obs = dict(observation=self.state.copy(), fallen=False, task_agn_rew=0.)
     return obs
 
   def is_out_of_bounds(self, state):
@@ -207,14 +208,16 @@ class PointMassEnv(gym.Env):
       return True
     return False
 
-  def is_fallen(self, state):
+  def is_fallen(self, state=None):
+    if state is None:
+      state = self.state
     (i, j) = self._discretize_state(state)
-    return (self._walls[i, j] == 1)
+    return self._walls[i, j] == 1
 
   def step(self, action):
     action = self._action_scale * action
     if self._action_noise > 0:
-      action += np.random.normal(0, self._action_noise)
+      action += (np.random.sample((2,)) - 0.5) * self._action_noise
     action = np.clip(action, self.action_space.low * self._action_scale, self.action_space.high * self._action_scale)
     num_substeps = 10
     dt = 1.0 / num_substeps
@@ -229,7 +232,7 @@ class PointMassEnv(gym.Env):
         if self.is_out_of_bounds(new_state):
           new_state = np.clip(new_state, self.observation_space['observation'].low,
                               self.observation_space['observation'].high)
-          obs = dict(observation=new_state, fallen=True, task_agn_reward=1.)
+          obs = dict(observation=new_state, fallen=True, task_agn_rew=1.)
           return obs, -1., True, {}
         elif self.is_fallen(new_state):
           # rew adds -1 if in well for one full step
@@ -237,10 +240,12 @@ class PointMassEnv(gym.Env):
           fallen = True
           task_agn = 1.
         self.state = new_state
+        if fallen:
+          break
     # control rew discourages large actions, in range [-1.414*c, 0]
     rew += -1.0 * np.linalg.norm(action) * self._action_pen
     obs = dict(
-        observation=self.state.copy(), fallen=fallen, task_agn_reward=task_agn)
+        observation=self.state.copy(), fallen=fallen, task_agn_rew=task_agn)
     return obs, rew + self._alive_bonus, False, {}
 
   @property
@@ -312,9 +317,9 @@ class GoalConditionedPointWrapper(gym.Wrapper):
           low=np.array([0., 0.]), high=np.array([1., 1.]), dtype=np.float32)
     else:
       obs_space = env.observation_space['observation']
-    if goal_bounds:
+    if goal_bounds is not None:
       goal_space = gym.spaces.Box(
-          low=goal_bounds[0], high=goal_bounds[1], dtype=np.float32)
+          low=np.array(goal_bounds[0]), high=np.array(goal_bounds[1]), dtype=np.float32)
     else:
       goal_space = env.observation_space['observation']
     if goal:
@@ -326,7 +331,7 @@ class GoalConditionedPointWrapper(gym.Wrapper):
         'observation': obs_space,
         'goal': goal_space,
         'fallen': env.observation_space['fallen'],
-        'task_agn_reward': env.observation_space['task_agn_reward']
+        'task_agn_rew': env.observation_space['task_agn_rew']
     })
 
   def _normalize_obs(self, obs):
@@ -374,12 +379,12 @@ class GoalConditionedPointWrapper(gym.Wrapper):
     elif self._task_rew_type == '-1':  # alive penalty
       task_rew += -.1
 
-    if self.is_done(state, goal) and not self.is_fallen():
+    if self.is_done(state, goal) and not obs['fallen']:
       task_rew = 1.
       done = True
-    elif self.is_fallen():  # if fallen into well
+    elif obs['fallen']:  # if fallen into well
       done = True if self._reset_on_fall else False
-      task_rew += self._fall_penalty
+      task_rew = self._fall_penalty
 
     return obs, task_rew, done, {}
 
@@ -448,7 +453,7 @@ class TimeLimitBonus(wrappers.PyEnvironmentBaseWrapper):
       time_step = time_step._replace(step_type=ts.StepType.LAST)
 
     if time_step.is_last():
-      if not self._env.is_fallen():
+      if not time_step.observation['fallen']:
         reward = (
             time_step.reward + self._early_term_bonus *
             (self._duration - self._num_steps))
@@ -469,7 +474,7 @@ class TimeLimitBonus(wrappers.PyEnvironmentBaseWrapper):
 
 
 @gin.configurable
-def env_load_fn(environment_name,  # pylint: disable=dangerous-default-value
+def env_load_fn(environment_name='DrunkSpider',  # pylint: disable=dangerous-default-value
                 max_episode_steps=50,
                 resize_factor=1,
                 env_kwargs=dict(action_noise=0., start=(0, 3)),

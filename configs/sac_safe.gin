@@ -16,34 +16,26 @@ import safemrl.algos.safe_sac_agent
 import safemrl.envs.minitaur
 import safemrl.algos.agents
 
-include 'minitaur_default.gin'
+include 'networks.gin'
 
-ENV_STR = "MinitaurGoalVelocityEnv-v0"
+NUM_ENVS = 1
+NUM_EVAL = 30
+NUM_STEPS = 500000
 LEARNING_RATE = 3e-4
 SLOW_LEARNING_RATE = 1e-5
-NUM_EVAL = 30
 
 trainer.train_eval.env_name = %ENV_STR
-trainer.train_eval.env_load_fn = @suite_pybullet.load
-suite_pybullet.load.gym_env_wrappers = (@minitaur.TaskAgnWrapper,)
+trainer.train_eval.env_load_fn = %ENV_LOAD_FN
 trainer.train_eval.agent_class = @safe_sac_agent.SafeSacAgent
 trainer.train_eval.keep_rb_checkpoint = True
-trainer.train_eval.train_metrics = [
-    @metrics.AverageEarlyFailureMetric()
-]
+trainer.train_eval.train_metrics = %TRAIN_METRICS
+trainer.train_eval.eval_metrics = %EVAL_METRICS
+trainer.train_eval.num_global_steps = %NUM_STEPS
 metrics.AverageEarlyFailureMetric.buffer_size = %NUM_EVAL
+
 metrics.AverageEarlyFailureMetric.batch_size = 1
 
-
-actor_distribution_network.ActorDistributionNetwork.preprocessing_combiner = (
-    @agents.extract_observation_layer()
-)
-agents.CriticNetwork.preprocessing_combiner = (
-    @agents.extract_obs_merge_w_ac_layer()
-)
-
-# safe_sac_agent.SafeSacAgent.debug_summaries = True
-safe_sac_agent.SafeSacAgent.reward_scale_factor = 10.0
+safe_sac_agent.SafeSacAgent.reward_scale_factor = 1.0
 safe_sac_agent.SafeSacAgent.actor_optimizer = @ac_opt/tf.keras.optimizers.Adam()
 safe_sac_agent.SafeSacAgent.gamma = 0.99
 ac_opt/tf.keras.optimizers.Adam.learning_rate = %LEARNING_RATE

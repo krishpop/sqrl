@@ -1,0 +1,12 @@
+import safemrl.algos.agents
+import tf_agents.networks.actor_distribution_network
+
+actor_distribution_network.ActorDistributionNetwork.preprocessing_combiner = (
+    @agents.extract_observation_layer()
+)
+actor_distribution_network.ActorDistributionNetwork.fc_layer_params = (256, 256)
+
+agents.CriticNetwork.preprocessing_combiner = (
+    @agents.extract_obs_merge_w_ac_layer()
+)
+agents.CriticNetwork.joint_fc_layer_params = (256, 256)

@@ -88,7 +88,8 @@ def extract_observation_layer():
 @gin.configurable
 def normal_projection_net(action_spec,
                           init_action_stddev=0.35,
-                          init_means_output_factor=0.1):
+                          init_means_output_factor=0.1,
+                          scale_distribution=True):
   del init_action_stddev
   return normal_projection_network.NormalProjectionNetwork(
       action_spec,
@@ -96,7 +97,7 @@ def normal_projection_net(action_spec,
       state_dependent_std=True,
       init_means_output_factor=init_means_output_factor,
       std_transform=sac_agent.std_clip_transform,
-      scale_distribution=False)
+      scale_distribution=scale_distribution)
 
 
 @gin.configurable
@@ -305,15 +306,15 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
                observation_normalizer=None,
                clip=True,
                resample_counter=None,
+               training=False,
                name=None):
     super(SafeActorPolicyRSVar,
           self).__init__(time_step_spec, action_spec, actor_network, info_spec,
-                         observation_normalizer, clip, name)
+                         observation_normalizer, clip, training, name)
     self._safety_critic_network = safety_critic_network
     self._safety_threshold = safety_threshold
     self._resample_counter = resample_counter
 
-  @common.function
   def _apply_actor_network(self, time_step, policy_state):
     has_batch_dim = time_step.step_type.shape.as_list()[0] > 1
     observation = time_step.observation
@@ -347,11 +348,11 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
         self._resample_counter()
       resample_count += 1
       if isinstance(actions, dist_utils.SquashToSpecNormal):
-        scale = actions.action_magnitudes * 1.5  # increase variance by constant 1.5
-        ac_mean = actions.action_means
+        scale = actions.input_distribution.scale * 1.5  # increase variance by constant 1.5
+        ac_mean = actions.mean()
       else:
         scale = actions.scale * 1.5
-        ac_mean = actions.loc
+        ac_mean = actions.mean()
       actions = self._actor_network.output_spec.build_distribution(
           loc=ac_mean, scale=scale)
       sampled_ac = actions.sample(50)
@@ -366,8 +367,8 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
     if not safe_ac_idx.shape.as_list()[0]:  # return safest action
       safe_idx = tf.argmin(fail_prob)
     else:
-      sampled_ac = tf.gather(sampled_ac, safe_ac_idx)
-      fail_prob_safe = tf.gather(fail_prob, safe_ac_idx)
+      sampled_ac = tf.squeeze(tf.gather(sampled_ac, safe_ac_idx))
+      fail_prob_safe = tf.squeeze(tf.gather(fail_prob, safe_ac_idx))
       safe_idx = tf.argmax(fail_prob_safe)
     return sampled_ac[safe_idx], policy_state
 

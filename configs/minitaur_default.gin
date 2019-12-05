@@ -1,7 +1,21 @@
 import safemrl.envs.minitaur
+import safemrl.utils.metrics
+import tf_agents.environments.suite_pybullet
 
 EP_LEN = 500
+ENV_STR = "MinitaurGoalVelocityEnv-v0"
+ENV_LOAD_FN = @suite_pybullet.load
+TRAIN_METRICS = [
+    @safemrl.utils.metrics.AverageEarlyFailureMetric()
+]
 
+eval_failure/singleton.constructor = @safemrl.utils.metrics.AverageEarlyFailureMetric
+EVAL_METRICS = [
+               @eval_failure/singleton()
+]
+# safemrl.utils.metrics.AverageEarlyFailureMetric.batch_size = %NUM_ENVS
+
+suite_pybullet.load.gym_env_wrappers = (@minitaur.TaskAgnWrapper,)
 minitaur.MinitaurGoalVelocityEnv.max_steps = %EP_LEN
 minitaur.MinitaurGoalVelocityEnv.accurate_motor_model_enabled = True
 minitaur.MinitaurGoalVelocityEnv.never_terminate = False
@@ -13,3 +27,5 @@ minitaur.MinitaurGoalVelocityEnv.history_include_states = True
 minitaur.MinitaurGoalVelocityEnv.include_leg_model = True
 
 minitaur.MinitaurGoalVelocityEnv.goal_limit = 0.8
+minitaur.MinitaurGoalVelocityEnv.goal_vel = 0.4
+minitaur.MinitaurGoalVelocityEnv.butterworth = True

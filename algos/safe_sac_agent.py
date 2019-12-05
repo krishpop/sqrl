@@ -572,7 +572,7 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
                critic_network_2=None,
                target_critic_network=None,
                target_critic_network_2=None,
-               target_update_tau=1.0,
+               target_update_tau=0.005,
                target_update_period=1,
                td_errors_loss_fn=tf.math.squared_difference,
                safe_td_errors_loss_fn=tf.keras.losses.binary_crossentropy,
@@ -622,7 +622,8 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
         actor_network=self._actor_network,
         safety_critic_network=self._safety_critic_network,
         safety_threshold=self._target_safety,
-        resample_counter=resample_counter)
+        resample_counter=resample_counter,
+        training=True)
 
     self._safety_critic_optimizer = safety_critic_optimizer
     self._lambda_optimizer = lambda_optimizer or alpha_optimizer
@@ -910,6 +911,7 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
       pred_input = (time_steps.observation, actions)
       pred_td_targets, unused_network_state1 = self._safety_critic_network(
           pred_input, time_steps.step_type)
+      pred_td_targets = tf.nn.sigmoid(pred_td_targets)
       safety_critic_loss = self._safe_td_errors_loss_fn(td_targets,
                                                         pred_td_targets)
 
@@ -976,12 +978,11 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
           reward_scale_factor * next_time_steps.reward +
           gamma * next_time_steps.discount * target_q_values)
 
-      pred_input_1 = (time_steps.observation, actions)
+      pred_input = (time_steps.observation, actions)
       pred_td_targets1, unused_network_state1 = self._critic_network_1(
-          pred_input_1, time_steps.step_type)
-      pred_input_2 = (time_steps.observation, actions)
+          pred_input, time_steps.step_type)
       pred_td_targets2, unused_network_state2 = self._critic_network_2(
-          pred_input_2, time_steps.step_type)
+          pred_input, time_steps.step_type)
       critic_loss1 = td_errors_loss_fn(td_targets, pred_td_targets1)
       critic_loss2 = td_errors_loss_fn(td_targets, pred_td_targets2)
       critic_loss = critic_loss1 + critic_loss2

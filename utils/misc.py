@@ -29,7 +29,10 @@ import datetime
 import os.path as osp
 import matplotlib.pyplot as plt
 import tensorflow as tf
+import gin
 
+from scipy.signal import butter, lfilter
+from scipy.signal import freqz
 from tf_agents.utils import common
 from tf_agents.agents.sac import sac_agent
 from safemrl.algos import safe_sac_agent
@@ -39,6 +42,26 @@ from safemrl.algos import agents
 
 # def construct_tf_agent(agent_class):
 #   if agent_class
+
+AGENT_CLASS_BINDINGS = {
+  'sac-safe': 'safe_sac_agent.SafeSacAgent',
+  'sac-safe-online': 'safe_sac_agent.SafeSacAgentOnline',
+  'sac': 'sac_agent.SacAgent',
+  'sac-ensemble': 'ensemble_sac_agent.EnsembleSacAgent'
+}
+
+def butter_bandpass(lowcut=0.1, highcut=5.0, fs=50, order=1):
+    nyq = 0.5 * fs
+    low = lowcut / nyq
+    high = highcut / nyq
+    b, a = butter(order, [low, high], btype='band')
+    return b, a
+
+
+def butter_bandpass_filter(data, lowcut=0.1, highcut=5.0, fs=50, order=1):
+    b, a = butter_bandpass(lowcut, highcut, fs, order=order)
+    y = lfilter(b, a, data)
+    return y[-1]
 
 
 def load_rb_ckpt(ckpt_dir, replay_buffer, ckpt_step=None):
@@ -107,7 +130,7 @@ def create_default_writer_and_save_dir(root_dir):
   return writer, save_dir
 
 
-def record_well_episode_vis(tf_env, tf_policy, savepath=None):
+def record_point_mass_episode(tf_env, tf_policy, savepath=None):
   """Records summaries."""
   time_step = tf_env.reset()
   policy_state = tf_policy.get_initial_state()

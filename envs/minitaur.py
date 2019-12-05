@@ -29,6 +29,7 @@ import gym
 import numpy as np
 
 from pybullet_envs.minitaur.envs import minitaur_extended_env
+from safemrl.utils import misc
 
 ENV_DEFAULTS = {
   "accurate_motor_model_enabled": True,
@@ -46,16 +47,18 @@ class MinitaurGoalVelocityEnv(minitaur_extended_env.MinitaurExtendedEnv):
   """The 'extended' minitaur env with a target velocity."""
 
   def __init__(self,
-               goal_sampler=lambda: 0.3,
+               goal_vel=0.3,
                goal_limit=0.8,
                max_steps=500,
                debug=False,
+               butterworth=False,
                **kwargs):
-    self.set_sample_goal_args(goal_limit, goal_sampler)
-    self._goal_vel = None
+    self.set_sample_goal_args(goal_limit, goal_vel)
+    # self._goal_vel = None
     self._current_vel = 0.
     self._debug = debug
     self._max_steps = max_steps
+    self._butterworth = butterworth
     if not kwargs:
       kwargs = ENV_DEFAULTS
     super(MinitaurGoalVelocityEnv, self).__init__(**kwargs)
@@ -91,16 +94,15 @@ class MinitaurGoalVelocityEnv(minitaur_extended_env.MinitaurExtendedEnv):
       return True
     return False
 
-  def set_sample_goal_args(self, goal_limit=None, goal_sampler=None):
+  def set_sample_goal_args(self, goal_limit=None, goal_vel=None):
     if goal_limit is not None:
       self._goal_limit = goal_limit
-    if goal_sampler is not None:
-      if not callable(goal_sampler):
-        goal_sampler = lambda: float(goal_sampler)
-      self._goal_sampler = goal_sampler
+    if goal_vel is not None:
+      self._goal_vel = goal_vel
 
-  def reset(self):
-    self._goal_vel = self._goal_sampler()
+  def reset(self, **kwargs):
+    if kwargs.get('initial_motor_angles', None):
+      return super(minitaur_extended_env.MinitaurExtendedEnv, self).reset(**kwargs)
     return super(MinitaurGoalVelocityEnv, self).reset()
 
   def reward(self):
@@ -125,13 +127,21 @@ class MinitaurGoalVelocityEnv(minitaur_extended_env.MinitaurExtendedEnv):
 
     reward = 0.0
     reward += 1.0 * velocity_reward
-    reward -= 0.02 * action_acceleration_penalty  # TODO(krshna): lowering acceleration penalty, try 0.01, 0.002
+    reward -= 0.01 * action_acceleration_penalty  # TODO(krshna): lowering acceleration penalty, try 0.01, 0.002
 
     if self._debug:
-      self.pybullet_client.addUserDebugText('Current velocity: {:3.2f}'.format(self._current_vel), [0, 0, 1],
-                                            [1, 0, 0])
-
+      self.pybullet_client.addUserDebugText('Current velocity: {:3.2f}'.format(
+        self._current_vel), [0, 0, 1], [1, 0, 0])
     return reward
+
+  def step(self, action):
+    if self._butterworth:
+      action *= self._action_scale
+      self._past_actions[self._counter] = action
+      data = self._past_actions[:self._counter+1]
+      action = np.apply_along_axis(misc.butter_bandpass_filter, 0, data)
+      action /= self._action_scale
+    return super(MinitaurGoalVelocityEnv, self).step(action)
 
 
 @gin.configurable

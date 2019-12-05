@@ -1,0 +1,13 @@
+import safemrl.trainer
+import tf_agents.utils.common
+
+include 'networks_tiny.gin'
+
+NUM_ENVS = 5
+NUM_EVAL = 5
+LEARNING_RATE = 3e-4
+SLOW_LEARNING_RATE = 1e-5
+NUM_STEPS = 100000
+INITIAL_NUM_STEPS = 50
+
+trainer.train_eval.keep_rb_checkpoint = False

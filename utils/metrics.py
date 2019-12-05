@@ -62,10 +62,11 @@ class AverageEarlyFailureMetric(py_metrics.StreamingMetric):
       trajectory: a tf_agents.trajectory.Trajectory.
     """
     episode_steps = self._np_state.episode_steps
-    is_last = np.where(trajectory.is_last())
+    is_last = np.where(trajectory.is_boundary())
 
     episode_steps[np.where(~trajectory.is_boundary())] += 1
-    self.add_to_buffer(episode_steps[is_last] < self._max_episode_len)
+    if len(is_last) > 0:
+      self.add_to_buffer(episode_steps[is_last] < self._max_episode_len)
     episode_steps[is_last] = 0
 
 

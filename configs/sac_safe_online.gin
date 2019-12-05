@@ -2,7 +2,6 @@ import gin.tf
 import gin.tf.external_configurables
 import tf_agents.agents.sac
 import tf_agents.environments.suite_pybullet
-import tf_agents.networks.actor_distribution_network
 import tf_agents.drivers.dynamic_step_driver
 import tf_agents.metrics.tf_py_metric
 import tf_agents.metrics.py_metrics
@@ -10,44 +9,40 @@ import tf_agents.metrics.py_metrics
 import safemrl.trainer
 import safemrl.utils.external_configurables
 import safemrl.utils.metrics
+import safemrl.utils.safe_dynamic_episode_driver
 import safemrl.algos.ensemble_sac_agent
 import safemrl.algos.safe_sac_agent
 import safemrl.envs.minitaur
 import safemrl.algos.agents
 
-include 'minitaur_default.gin'
+include 'networks.gin'
 
-ENV_STR = "MinitaurGoalVelocityEnv-v0"
+NUM_ENVS = 1
+NUM_EVAL = 10
+INITIAL_NUM_STEPS = %EP_LEN  # 500
+NUM_STEPS = 500000
 LEARNING_RATE = 3e-4
 SLOW_LEARNING_RATE = 1e-5
-NUM_EVAL = 30
+AGENT_CLASS = @safe_sac_agent.SafeSacAgentOnline
 
-trainer.train_eval.online_critic = True
 trainer.train_eval.env_name = %ENV_STR
-trainer.train_eval.env_load_fn = @suite_pybullet.load
-suite_pybullet.load.gym_env_wrappers = (@minitaur.TaskAgnWrapper,)
-trainer.train_eval.agent_class = @safe_sac_agent.SafeSacAgentOnline
+trainer.train_eval.env_load_fn = %ENV_LOAD_FN
+trainer.train_eval.agent_class = %AGENT_CLASS
 trainer.train_eval.online_critic = True
 trainer.train_eval.keep_rb_checkpoint = True
-trainer.train_eval.train_metrics = [
-    @metrics.AverageEarlyFailureMetric()
-]
-trainer.train_eval.num_global_steps = 1000000
+trainer.train_eval.debug_summaries = True
+trainer.train_eval.train_metrics = %TRAIN_METRICS
+trainer.train_eval.eval_metrics = %EVAL_METRICS
+trainer.train_eval.num_global_steps = %NUM_STEPS
+trainer.train_eval.n_envs = %NUM_ENVS
 metrics.AverageEarlyFailureMetric.buffer_size = %NUM_EVAL
 metrics.AverageEarlyFailureMetric.batch_size = 1
 
-
-actor_distribution_network.ActorDistributionNetwork.preprocessing_combiner = (
-    @agents.extract_observation_layer()
-)
-agents.CriticNetwork.preprocessing_combiner = (
-    @agents.extract_obs_merge_w_ac_layer()
-)
-
-safe_sac_agent.SafeSacAgentOnline.reward_scale_factor = 10.0
-safe_sac_agent.SafeSacAgentOnline.actor_optimizer = @ac_opt/tf.keras.optimizers.Adam()
+safe_sac_agent.SafeSacAgentOnline.reward_scale_factor = 1.0
 safe_sac_agent.SafeSacAgentOnline.gamma = 0.99
+safe_sac_agent.SafeSacAgentOnline.target_update_tau = 0.005
 safe_sac_agent.SafeSacAgentOnline.safety_pretraining = True
+safe_sac_agent.SafeSacAgentOnline.actor_optimizer = @ac_opt/tf.keras.optimizers.Adam()
 ac_opt/tf.keras.optimizers.Adam.learning_rate = %LEARNING_RATE
 safe_sac_agent.SafeSacAgentOnline.critic_optimizer = @cr_opt/tf.keras.optimizers.Adam()
 cr_opt/tf.keras.optimizers.Adam.learning_rate = %LEARNING_RATE
@@ -57,10 +52,16 @@ safe_sac_agent.SafeSacAgentOnline.safety_critic_optimizer = @sc_opt/tf.keras.opt
 sc_opt/tf.keras.optimizers.Adam.learning_rate = %LEARNING_RATE
 
 trainer.train_eval.initial_collect_driver_class = @init_collect/dynamic_step_driver.DynamicStepDriver
-init_collect/dynamic_step_driver.DynamicStepDriver.num_steps = %EP_LEN
+init_collect/dynamic_step_driver.DynamicStepDriver.num_steps = %INITIAL_NUM_STEPS
+
+# trainer.train_eval.online_driver_class = @safe_dynamic_episode_driver.SafeDynamicEpisodeDriver
+# safe_dynamic_episode_driver.SafeDynamicEpisodeDriver.ep_history_unsafe = 2
+
 
 trainer.train_eval.collect_driver_class = @collect_driver/dynamic_step_driver.DynamicStepDriver
 collect_driver/dynamic_step_driver.DynamicStepDriver.num_steps = 1
 
 safe_sac_agent.SafeSacAgentOnline.resample_counter = @resample_counter/py_metrics.CounterMetric()
 cm/py_metrics.CounterMetric.name = "unsafe_ac_samples"
+
+agents.normal_projection_net.scale_distribution = True

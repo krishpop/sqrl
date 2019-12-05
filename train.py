@@ -42,6 +42,7 @@ flags.DEFINE_string('root_dir', None,
 flags.DEFINE_multi_string('gin_file', None, 'Paths to the study config files.')
 flags.DEFINE_multi_string('gin_param', None, 'Gin binding to pass through.')
 flags.DEFINE_boolean('debug', False, 'set log level to debug if True')
+flags.DEFINE_boolean('eager_debug', False, 'Debug in eager mode if True')
 flags.DEFINE_boolean('wandb', False, 'Whether or not to log experiment to wandb')
 
 FLAGS = flags.FLAGS
@@ -65,9 +66,9 @@ def main(_):
       FLAGS.gin_file, FLAGS.gin_param, skip_unknown=True)
   metrics_callback = None
   if FLAGS.wandb:
-    wandb.init(sync_tensorboard=True)
+    wandb.init(sync_tensorboard=True, entity='krshna', project='safemrl')
     global stop_training
-    stop_training = [False]
+    stop_training = False
     early_stopping_fn = lambda: stop_training[0]
     @gin.configurable
     def metrics_callback(results, step, metric_name="Metrics/AverageReturn"):
@@ -77,6 +78,8 @@ def main(_):
   else:
     early_stopping_fn = lambda: False
   if FLAGS.debug:
+    logging.set_verbosity(logging.DEBUG)
+  else:
     logging.set_verbosity(logging.DEBUG)
 
   trainer.train_eval(FLAGS.root_dir, eval_metrics_callback=metrics_callback,
