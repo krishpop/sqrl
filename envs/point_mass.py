@@ -215,6 +215,8 @@ class PointMassEnv(gym.Env):
     return self._walls[i, j] == 1
 
   def step(self, action):
+    if len(action.shape) == 2:
+      action = action[0]
     action = self._action_scale * action
     if self._action_noise > 0:
       action += (np.random.sample((2,)) - 0.5) * self._action_noise
@@ -253,30 +255,50 @@ class PointMassEnv(gym.Env):
     return self._walls
 
 
+@gin.configurable
 class PointMassAcNoiseEnv(PointMassEnv):
-  def __init__(self, n_tasks=10, task_bounds=(0., 0.4)):
+  def __init__(self, n_tasks=10, task_bounds=(0., 0.4), domain_rand=False, *env_args, **env_kwargs):
     ac_noise_low, ac_noise_high = task_bounds
     self._tasks = np.linspace(ac_noise_low, ac_noise_high, n_tasks)
     ac_noise = self._tasks[np.random.randint(n_tasks)]
-    super(PointMassAcNoiseEnv, self).__init__(action_noise=ac_noise)
+    if env_kwargs is None:
+      env_kwargs = {}
+    env_kwargs['action_noise'] = ac_noise
+    self._domain_rand = domain_rand
+    super(PointMassAcNoiseEnv, self).__init__(*env_args, **env_kwargs)
 
   def reset_task(self, task_idx=None):
     if task_idx is None:
       task_idx = np.random.randint(len(self._tasks))
     self._action_noise = self._tasks[task_idx]
 
+  def reset(self):
+    if self._domain_rand:
+      self.reset_task()
+    return super(PointMassAcNoiseEnv, self).reset()
 
+
+@gin.configurable
 class PointMassAcScaleEnv(PointMassEnv):
-  def __init__(self, n_tasks=16, task_bounds=(0.5, 2.)):
+  def __init__(self, n_tasks=16, task_bounds=(0.5, 2.), domain_rand=False, *env_args, **env_kwargs):
     ac_scale_low, ac_scale_high = task_bounds
     self._tasks = np.linspace(ac_scale_low, ac_scale_high, n_tasks)
     ac_scale = self._tasks[np.random.randint(n_tasks)]
-    super(PointMassAcScaleEnv, self).__init__(action_scale=ac_scale)
+    if env_kwargs is None:
+      env_kwargs = {}
+    env_kwargs['action_scale'] = ac_scale
+    self._domain_rand = domain_rand
+    super(PointMassAcScaleEnv, self).__init__(*env_args, **env_kwargs)
 
   def reset_task(self, task_idx=None):
     if task_idx is None:
       task_idx = np.random.randint(len(self._tasks))
     self._action_scale = self._tasks[task_idx]
+
+  def reset(self):
+    if self._domain_rand:
+      self.reset_task()
+    return super(PointMassAcScaleEnv, self).reset()
 
 
 @gin.configurable
@@ -496,8 +518,17 @@ def env_load_fn(environment_name='DrunkSpider',  # pylint: disable=dangerous-def
   Returns:
     A PyEnvironmentBase instance.
   """
-  gym_env = PointMassEnv(
-      environment_name, resize_factor=resize_factor, **env_kwargs)
+  if 'acnoise' in environment_name.split('-'):
+    environment_name = environment_name.split('-')[0]
+    gym_env = PointMassAcNoiseEnv(
+      env_name=environment_name, resize_factor=resize_factor, **env_kwargs)
+  elif 'acscale' in environment_name.split('-'):
+    environment_name = environment_name.split('-')[0]
+    gym_env = PointMassAcNoiseEnv(
+      env_name=environment_name, resize_factor=resize_factor, **env_kwargs)
+  else:
+    gym_env = PointMassEnv(
+        environment_name, resize_factor=resize_factor, **env_kwargs)
 
   gym_env = GoalConditionedPointWrapper(gym_env, **goal_env_kwargs)
   env = gym_wrapper.GymWrapper(
@@ -510,3 +541,18 @@ def env_load_fn(environment_name='DrunkSpider',  # pylint: disable=dangerous-def
       env = NonTerminatingTimeLimit(env, max_episode_steps)
 
   return env
+
+
+class PointMassObservationWrapper(gym.ObservationWrapper):
+  def __init__(self, env):
+    super().__init__(env)
+    self.observation_space = env.observation_space['observation']
+
+  def observation(self, obs):
+    return obs['observation']
+
+  def step(self, action):
+      o, r, d, i = self.env.step(action)
+      i.update(o)
+      o = self.observation(o)
+      return o, r, d, i

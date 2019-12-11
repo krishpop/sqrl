@@ -177,8 +177,7 @@ def train_eval(
     if agent_class in SAFETY_AGENTS:
       safety_critic_net = agents.CriticNetwork(
           (observation_spec, action_spec),
-          joint_fc_layer_params=critic_joint_fc_layers,
-          debug_summaries=debug_summaries)
+          joint_fc_layer_params=critic_joint_fc_layers)
       tf_agent = agent_class(
           time_step_spec,
           action_spec,
@@ -273,8 +272,13 @@ def train_eval(
           safety_critic=tf_agent._safety_critic_network,  # pylint: disable=protected-access
           global_step=global_step)
     rb_ckpt_dir = os.path.join(train_dir, 'replay_buffer')
-    rb_checkpointer = common.Checkpointer(
-        ckpt_dir=rb_ckpt_dir, max_to_keep=1, replay_buffer=replay_buffer)
+    if online_critic:
+      rb_checkpointer = common.Checkpointer(
+        ckpt_dir=rb_ckpt_dir, max_to_keep=1, replay_buffer=replay_buffer,
+        online_replay_buffer=online_replay_buffer)
+    else:
+      rb_checkpointer = common.Checkpointer(
+          ckpt_dir=rb_ckpt_dir, max_to_keep=1, replay_buffer=replay_buffer)
 
     if load_root_dir:
       load_root_dir = os.path.expanduser(load_root_dir)

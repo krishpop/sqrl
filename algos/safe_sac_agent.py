@@ -577,6 +577,7 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
                td_errors_loss_fn=tf.math.squared_difference,
                safe_td_errors_loss_fn=tf.keras.losses.binary_crossentropy,
                gamma=1.0,
+               safety_gamma=None,
                reward_scale_factor=1.0,
                initial_log_alpha=0.0,
                initial_log_lambda=0.0,
@@ -629,6 +630,7 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
     self._lambda_optimizer = lambda_optimizer or alpha_optimizer
     self._safety_pretraining = safety_pretraining
     self._safe_td_errors_loss_fn = safe_td_errors_loss_fn
+    self._safety_gamma = safety_gamma or self._gamma
 
   def _initialize(self):
     """Returns an op to initialize the agent.
@@ -682,11 +684,11 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
       assert trainable_safety_variables, ('No trainable safety critic variables'
                                           ' to optimize.')
       tape.watch(trainable_safety_variables)
-      # TODO(krshna): try soft updates with a target safety network?
       safety_critic_loss = self.safety_critic_loss(
           time_steps,
           actions,
           next_time_steps,
+          gamma=self._safety_gamma,
           safety_rewards=safe_rew,
           weights=weights)
     tf.debugging.check_numerics(safety_critic_loss, 'Critic loss is inf or '
@@ -878,6 +880,7 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
                          actions,
                          next_time_steps,
                          safety_rewards,
+                         gamma=1.,
                          weights=None):
     """Computes the critic loss for SAC training.
 
@@ -905,7 +908,7 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
       target_q_values = tf.nn.sigmoid(target_q_values)
 
       td_targets = tf.stop_gradient(safety_rewards +
-                                    (1 - safety_rewards) * self._gamma *
+                                    (1 - safety_rewards) * gamma *
                                     next_time_steps.discount * target_q_values)
 
       pred_input = (time_steps.observation, actions)

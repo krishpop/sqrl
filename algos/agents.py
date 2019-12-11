@@ -283,6 +283,7 @@ class CriticNetwork(network.Network):
         activation=None,
         kernel_initializer=tf.keras.initializers.RandomUniform(
             minval=-0.003, maxval=0.003),
+        bias_initializer=tf.constant_initializer(-1),
         name='value')
 
   def call(self, observations, step_type, network_state=()):
@@ -364,12 +365,14 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
       safe_ac_idx = tf.where(fail_prob < self._safety_threshold)
 
     sampled_ac = ac_batch_squash.unflatten(sampled_ac)
-    if not safe_ac_idx.shape.as_list()[0]:  # return safest action
+    if None in safe_ac_idx.shape.as_list() or not np.prod(safe_ac_idx.shape.as_list()):  # return safest action
       safe_idx = tf.argmin(fail_prob)
     else:
-      sampled_ac = tf.squeeze(tf.gather(sampled_ac, safe_ac_idx))
-      fail_prob_safe = tf.squeeze(tf.gather(fail_prob, safe_ac_idx))
-      safe_idx = tf.argmax(fail_prob_safe)
+      sampled_ac = tf.gather(sampled_ac, safe_ac_idx)
+      fail_prob_safe = tf.gather(fail_prob, safe_ac_idx)
+      safe_idx = tf.argmax(fail_prob_safe)[0]  # picks most unsafe action out of "safe" options
+    ac = sampled_ac[safe_idx]
+    assert ac.shape.as_list()[0] == 1, 'action shape is not correct: {}'.format(ac.shape.as_list())
     return sampled_ac[safe_idx], policy_state
 
 

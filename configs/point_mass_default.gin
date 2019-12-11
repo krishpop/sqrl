@@ -26,3 +26,6 @@ point_mass.env_load_fn.goal_env_kwargs = {'goal':(7, 3), 'task_rew_type':'l2',
                                           'goal_bounds':[(6, 2), (7, 4)]}
 
 safe_dynamic_episode_driver.SafeDynamicEpisodeDriver.ep_history_unsafe = 2
+
+point_mass.PointMassAcScaleEnv.domain_rand = True
+point_mass.PointMassAcScaleEnv.domain_rand = True
