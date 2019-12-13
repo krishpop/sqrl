@@ -57,7 +57,7 @@ FLAGS = flags.FLAGS
 MAX_LOSS = 1e9
 
 SAFETY_ENVS = ['IndianWell', 'IndianWell2', 'IndianWell3', 'DrunkSpider',
-                  'DrunkSpiderShort', 'MinitaurGoalVelocityEnv-v0']
+               'DrunkSpiderShort', 'MinitaurGoalVelocityEnv']
 SAFETY_AGENTS = [safe_sac_agent.SafeSacAgent, safe_sac_agent.SafeSacAgentOnline]
 
 # How many steps does the loss have to be diverged for (too high, inf, nan)
@@ -251,7 +251,7 @@ def train_eval(
       collect_policy = tf_agent.collect_policy
     else:
       eval_policy = tf_agent.policy  # pylint: disable=protected-access
-      collect_policy = tf_agent._safe_policy  # pylint: disable=protected-access
+      collect_policy = tf_agent.collect_policy  # pylint: disable=protected-access
       online_collect_policy = tf_agent._safe_policy
 
     initial_collect_policy = random_tf_policy.RandomTFPolicy(
@@ -362,7 +362,7 @@ def train_eval(
       def critic_train_step():
         """Builds critic training step."""
         experience, buf_info = next(online_iterator)
-        if env_name in SAFETY_ENVS:
+        if env_name.split('-')[0] in SAFETY_ENVS:
           safe_rew = experience.observation['task_agn_rew'][:, 1]
         else:
           safe_rew = agents.process_replay_buffer(

@@ -1,3 +1,3 @@
 
-python train.py --root_dir=$EXP_DIR/$1 --gin_file=$CONFIG_DIR/sac_safe_online.gin \
-    --gin_file=$CONFIG_DIR/point_mass_default.gin --gin_file=$CONFIG_DIR/networks_tiny.gin
+python train.py --root_dir=~/tfagents/baselines/sc-minitaur --gin_file=minitaur_default.gin \
+	--gin_file=sac_safe_online.gin --gin_file=networks.gin 
