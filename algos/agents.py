@@ -323,7 +323,8 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
       observation = self._observation_normalizer.normalize(observation)
     actions, policy_state = self._actor_network(observation,
                                                 time_step.step_type,
-                                                policy_state)
+                                                policy_state,
+                                                training=self._training)
     if has_batch_dim:
       return actions, policy_state
 
@@ -344,7 +345,7 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
     safe_ac_idx = tf.where(safe_ac_mask)
 
     resample_count = 0
-    while resample_count < 4 and not safe_ac_idx.shape.as_list()[0]:
+    while self._training and resample_count < 4 and not safe_ac_idx.shape.as_list()[0]:
       if self._resample_counter is not None:
         self._resample_counter()
       resample_count += 1
@@ -366,11 +367,14 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
 
     sampled_ac = ac_batch_squash.unflatten(sampled_ac)
     if None in safe_ac_idx.shape.as_list() or not np.prod(safe_ac_idx.shape.as_list()):  # return safest action
-      safe_idx = tf.argmin(fail_prob)
+      safe_idx = tf.argmin(fail_prob)[0]
     else:
       sampled_ac = tf.gather(sampled_ac, safe_ac_idx)
       fail_prob_safe = tf.gather(fail_prob, safe_ac_idx)
-      safe_idx = tf.argmax(fail_prob_safe)[0]  # picks most unsafe action out of "safe" options
+      if self._training:
+        safe_idx = tf.argmax(fail_prob_safe)[0]  # picks most unsafe action out of "safe" options
+      else:
+        safe_idx = tf.argmin(fail_prob_safe)[0]
     ac = sampled_ac[safe_idx]
     assert ac.shape.as_list()[0] == 1, 'action shape is not correct: {}'.format(ac.shape.as_list())
     return sampled_ac[safe_idx], policy_state

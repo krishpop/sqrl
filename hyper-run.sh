@@ -1,4 +1,3 @@
-
 for SG in 0.6 0.7 0.8
 do
 	for TS in 0.1 0.05 0.125

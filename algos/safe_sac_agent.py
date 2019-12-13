@@ -625,6 +625,14 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
         safety_threshold=self._target_safety,
         resample_counter=resample_counter,
         training=True)
+    self._collect_policy = agents.SafeActorPolicyRSVar(
+        time_step_spec=time_step_spec,
+        action_spec=action_spec,
+        actor_network=self._actor_network,
+        safety_critic_network=self._safety_critic_network,
+        safety_threshold=self._target_safety,
+        resample_counter=resample_counter,
+        training=False)
 
     self._safety_critic_optimizer = safety_critic_optimizer
     self._lambda_optimizer = lambda_optimizer or alpha_optimizer
