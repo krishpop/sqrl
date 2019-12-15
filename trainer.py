@@ -137,6 +137,8 @@ def train_eval(
       parallel_py_environment.ParallelPyEnvironment(
         [lambda: env_load_fn(env_name)] * n_envs
       ))
+    if FLAGS.seed:
+      sc_tf_env.seed([FLAGS.seed + i for i in range(n_envs)])
 
   if run_eval:
     eval_dir = os.path.join(root_dir, 'eval')
@@ -150,6 +152,8 @@ def train_eval(
       parallel_py_environment.ParallelPyEnvironment(
         [lambda: env_load_fn(env_name)] * n_envs
       ))
+    if FLAGS.seed:
+      eval_tf_env.seed([FLAGS.seed + n_envs + i for i in range(n_envs)])
 
   global_step = tf.compat.v1.train.get_or_create_global_step()
   with tf.compat.v2.summary.record_if(
@@ -157,7 +161,8 @@ def train_eval(
     tf_env = env_load_fn(env_name)
     if not isinstance(tf_env, tf_py_environment.TFPyEnvironment):
       tf_env = tf_py_environment.TFPyEnvironment(tf_env)
-
+    if FLAGS.seed:
+      tf_env.seed(FLAGS.seed + 2*n_envs + i for i in range(n_envs))
     time_step_spec = tf_env.time_step_spec()
     observation_spec = time_step_spec.observation
     action_spec = tf_env.action_spec()
@@ -309,7 +314,7 @@ def train_eval(
           num_episodes=num_eval_episodes)
       online_driver.run = common.function(online_driver.run)
 
-    if not FLAGS.debug:
+    if not FLAGS.eager_debug:
       config_saver = gin.tf.GinConfigSaverHook(train_dir, summarize_config=True)
       tf.function(config_saver.after_create_session)()
 

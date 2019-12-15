@@ -367,7 +367,7 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
 
     sampled_ac = ac_batch_squash.unflatten(sampled_ac)
     if None in safe_ac_idx.shape.as_list() or not np.prod(safe_ac_idx.shape.as_list()):  # return safest action
-      safe_idx = tf.argmin(fail_prob)[0]
+      safe_idx = tf.argmin(fail_prob)
     else:
       sampled_ac = tf.gather(sampled_ac, safe_ac_idx)
       fail_prob_safe = tf.gather(fail_prob, safe_ac_idx)

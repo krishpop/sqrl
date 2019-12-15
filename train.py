@@ -32,6 +32,8 @@ from absl import flags
 from absl import logging
 import gin
 import tensorflow as tf
+import random
+import numpy as np
 tf.compat.v1.enable_v2_behavior()
 import wandb
 
@@ -44,6 +46,7 @@ flags.DEFINE_multi_string('gin_param', None, 'Gin binding to pass through.')
 flags.DEFINE_boolean('debug', False, 'set log level to debug if True')
 flags.DEFINE_boolean('eager_debug', False, 'Debug in eager mode if True')
 flags.DEFINE_boolean('wandb', False, 'Whether or not to log experiment to wandb')
+flags.DEFINE_integer('seed', None, 'Seed to seed envs and algorithm with')
 
 FLAGS = flags.FLAGS
 
@@ -62,8 +65,15 @@ def main(_):
   if os.environ.get('CONFIG_DIR'):
     gin.add_config_file_search_path(os.environ.get('CONFIG_DIR'))
   logging.info('parsing config files: %s', FLAGS.gin_file)
+  bindings = FLAGS.gin_param or []
+  if FLAGS.seed:
+    # bindings.append(('trainer.train_eval.seed', FLAGS.seed))
+    random.seed(FLAGS.seed)
+    np.random.seed(FLAGS.seed)
+    tf.compat.v1.set_random_seed(FLAGS.seed)
+    logging.debug('Set seed: %d', FLAGS.seed)
   gin.parse_config_files_and_bindings(
-      FLAGS.gin_file, FLAGS.gin_param, skip_unknown=True)
+      FLAGS.gin_file, bindings, skip_unknown=True)
   metrics_callback = None
   if FLAGS.wandb:
     wandb.init(sync_tensorboard=True, entity='krshna', project='safemrl')
@@ -80,7 +90,7 @@ def main(_):
   if FLAGS.debug:
     logging.set_verbosity(logging.DEBUG)
   else:
-    logging.set_verbosity(logging.DEBUG)
+    logging.set_verbosity(logging.INFO)
 
   trainer.train_eval(FLAGS.root_dir, eval_metrics_callback=metrics_callback,
                      early_termination_fn=early_stopping_fn, debug_summaries=FLAGS.debug)
