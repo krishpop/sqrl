@@ -26,20 +26,30 @@ from gym.envs.registration import register
 registered = "MinitaurGoalVelocityEnv-v0" in gym.envs.registry.env_specs
 
 if not registered:
-    register(
-        id="MinitaurGoalVelocityEnv-v0",
-        entry_point=minitaur.MinitaurGoalVelocityEnv,
-        max_episode_steps=500
-    )
-    randomizers = []
-    # randomizers.append(minitaur_terrain_randomizer.MinitaurTerrainRandomizer())
-    randomizers.append(minitaur_env_randomizer_from_config.MinitaurEnvRandomizerFromConfig(
-        {'lateral friction': [0.5, 1.25]}
-    ))
-    register(
-        id="MinitaurGoalVelocityEnv-v1",
-        entry_point=minitaur.MinitaurGoalVelocityEnv,
-        max_episode_steps=500,
-        kwargs={'env_randomizers': randomizers}
+  register(
+    id="MinitaurGoalVelocityEnv-v0",
+    entry_point=minitaur.MinitaurGoalVelocityEnv,
+    max_episode_steps=500
+  )
 
-    )
+  randomizers = []
+  randomizers.append(minitaur_env_randomizer_from_config.MinitaurEnvRandomizerFromConfig(
+    'lat_params'
+  ))
+  register(
+    id="MinitaurRandFrictionGoalVelocityEnv-v0",
+    entry_point=minitaur.MinitaurGoalVelocityEnv,
+    max_episode_steps=500,
+    kwargs={'env_randomizer': randomizers}
+
+  )
+  randomizers = []
+  randomizers.append(minitaur_terrain_randomizer.MinitaurTerrainRandomizer())
+  register(
+    id="MinitaurRandTerrainGoalVelocityEnv-v0",
+    entry_point=minitaur.MinitaurGoalVelocityEnv,
+    max_episode_steps=500,
+    kwargs={'env_randomizer': randomizers}
+
+  )
+
