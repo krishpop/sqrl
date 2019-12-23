@@ -51,8 +51,6 @@ from safemrl.utils import misc
 from safemrl.utils import metrics
 
 
-FLAGS = flags.FLAGS
-
 # Loss value that is considered too high and training will be terminated.
 MAX_LOSS = 1e9
 
@@ -66,7 +64,7 @@ SAFETY_AGENTS = [safe_sac_agent.SafeSacAgent, safe_sac_agent.SafeSacAgentOnline]
 TERMINATE_AFTER_DIVERGED_LOSS_STEPS = 100
 
 
-@gin.configurable
+@gin.configurable(blacklist=['seed', 'eager_debug', 'env_metric_factories'])
 def train_eval(
     root_dir,
     load_root_dir=None,
@@ -108,10 +106,10 @@ def train_eval(
     summaries_flush_secs=10,
     early_termination_fn=None,
     debug_summaries=False,
+    seed=None,
+    eager_debug=False,
     env_metric_factories=None):  # pylint: disable=unused-argument
   """A simple train and eval for SC-SAC."""
-  if FLAGS.debug:
-    from pdb import set_trace as bp
 
   n_envs = n_envs or num_eval_episodes
   root_dir = os.path.expanduser(root_dir)
@@ -130,15 +128,15 @@ def train_eval(
     sc_summary_writer = tf.compat.v2.summary.create_file_writer(
       sc_dir, flush_millis=summaries_flush_secs * 1000)
     sc_metrics = [
-        tf_metrics.AverageReturnMetric(buffer_size=num_eval_episodes, batch_size=n_envs),
-        tf_metrics.AverageEpisodeLengthMetric(buffer_size=num_eval_episodes, batch_size=n_envs)
+        tf_metrics.AverageReturnMetric(buffer_size=num_eval_episodes, batch_size=n_envs, name='SafeAverageReturn'),
+        tf_metrics.AverageEpisodeLengthMetric(buffer_size=num_eval_episodes, batch_size=n_envs, name='SafeAverageEpisodeLength')
     ] + [tf_py_metric.TFPyMetric(m) for m in sc_metrics]
     sc_tf_env = tf_py_environment.TFPyEnvironment(
       parallel_py_environment.ParallelPyEnvironment(
         [lambda: env_load_fn(env_name)] * n_envs
       ))
-    if FLAGS.seed:
-      sc_tf_env.seed([FLAGS.seed + i for i in range(n_envs)])
+    if seed:
+      sc_tf_env.seed([seed + i for i in range(n_envs)])
 
   if run_eval:
     eval_dir = os.path.join(root_dir, 'eval')
@@ -152,8 +150,8 @@ def train_eval(
       parallel_py_environment.ParallelPyEnvironment(
         [lambda: env_load_fn(env_name)] * n_envs
       ))
-    if FLAGS.seed:
-      eval_tf_env.seed([FLAGS.seed + n_envs + i for i in range(n_envs)])
+    if seed:
+      eval_tf_env.seed([seed + n_envs + i for i in range(n_envs)])
 
   global_step = tf.compat.v1.train.get_or_create_global_step()
   with tf.compat.v2.summary.record_if(
@@ -161,8 +159,8 @@ def train_eval(
     tf_env = env_load_fn(env_name)
     if not isinstance(tf_env, tf_py_environment.TFPyEnvironment):
       tf_env = tf_py_environment.TFPyEnvironment(tf_env)
-    if FLAGS.seed:
-      tf_env.seed(FLAGS.seed + 2*n_envs + i for i in range(n_envs))
+    if seed:
+      tf_env.seed(seed + 2*n_envs + i for i in range(n_envs))
     time_step_spec = tf_env.time_step_spec()
     observation_spec = time_step_spec.observation
     action_spec = tf_env.action_spec()
@@ -314,12 +312,12 @@ def train_eval(
           num_episodes=num_eval_episodes)
       online_driver.run = common.function(online_driver.run)
 
-    if not FLAGS.eager_debug:
+    if not eager_debug:
       config_saver = gin.tf.GinConfigSaverHook(train_dir, summarize_config=True)
       tf.function(config_saver.after_create_session)()
 
     # collect_driver.run = common.function(collect_driver.run)
-    if FLAGS.eager_debug:
+    if eager_debug:
       tf.config.experimental_run_functions_eagerly(True)
 
     if not rb_checkpointer.checkpoint_exists:
