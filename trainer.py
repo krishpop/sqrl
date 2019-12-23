@@ -21,15 +21,12 @@ from __future__ import print_function
 
 import math
 import os
-import os.path as osp
 import time
 
-from absl import flags
 from absl import logging
 
 import gin
 import tensorflow as tf
-from tf_agents.agents.sac import sac_agent
 from tf_agents.drivers import dynamic_episode_driver
 from tf_agents.environments import tf_py_environment
 from tf_agents.environments import parallel_py_environment
@@ -78,6 +75,7 @@ def train_eval(
     train_steps_per_iteration=1,
     train_metrics=None,
     eval_metrics=None,
+    train_metrics_callback=None,
     # Params for SacAgent args
     actor_fc_layers=(256, 256),
     critic_joint_fc_layers=(256, 256),
@@ -459,16 +457,21 @@ def train_eval(
         timed_at_step = global_step.numpy()
         time_acc = 0
 
+      train_results = []
       for train_metric in train_metrics:
         if isinstance(train_metric, (metrics.AverageEarlyFailureMetric,
                                      metrics.AverageFallenMetric,
                                      metrics.AverageSuccessMetric)):
           # Plot failure as a fn of return
-          train_metrics.tf_summaries(
+          summaries = train_metrics.tf_summaries(
             train_step=global_step, step_metrics=train_metrics[:3])
         else:
-          train_metric.tf_summaries(
+          summaries = train_metric.tf_summaries(
               train_step=global_step, step_metrics=train_metrics[:2])
+        train_results.append((train_metric.name, summaries[0]))
+
+      if train_metrics_callback is not None:
+        train_metrics_callback(train_results, global_step.numpy())
 
       global_step_val = global_step.numpy()
       if global_step_val % train_checkpoint_interval == 0:

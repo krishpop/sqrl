@@ -39,6 +39,12 @@ def gin_bindings_from_config(config):
   return gin_bindings
 
 
+def wandb_log_callback(summaries, step=None):
+  del step
+  for summary in summaries:
+    wandb.tensorflow.log(summary)
+
+
 def main(_):
   if os.environ.get('CONFIG_DIR'):
     gin.add_config_file_search_path(os.environ.get('CONFIG_DIR'))
@@ -49,7 +55,7 @@ def main(_):
   gin.parse_config_files_and_bindings(gin_files, gin_bindings)
   tf.config.threading.set_inter_op_parallelism_threads(12)
   trainer.train_eval(FLAGS.root_dir, batch_size=config.batch_size, seed=FLAGS.seed,
-                     eager_debug=FLAGS.eager_debug)
+                     train_metrics_callback=wandb_log_callback, eager_debug=FLAGS.eager_debug)
 
 
 if __name__ == '__main__':
