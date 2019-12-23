@@ -19,6 +19,12 @@ flags.DEFINE_float('safety_gamma', 0.7, 'Safety discount term used for TD backup
 flags.DEFINE_float('target_safety', 0.1, 'Target safety for safety critic')
 flags.DEFINE_integer('target_entropy', -16, 'Target entropy for policy')
 flags.DEFINE_float('lr', 3e-4, 'Learning rate for all optimizers')
+flags.DEFINE_float('actor_lr', 3e-4, 'Learning rate for actor')
+flags.DEFINE_float('critic_lr', 3e-4, 'Learning rate for critic')
+flags.DEFINE_float('entropy_lr', 3e-4, 'Learning rate for alpha')
+flags.DEFINE_float('target_update_tau', 0.005, 'Factor for soft update of the target networks')
+flags.DEFINE_integer('target_update_period', 1, 'Factor for soft update of the target networks')
+flags.DEFINE_float('gamma', 0.99, 'Future reward discount factor')
 flags.DEFINE_float('reward_scale_factor', 1.0, 'Reward scale factor for SacAgent')
 flags.DEFINE_multi_string('gin_files', ['minitaur_default.gin', 'sac_safe_online.gin', 'networks.gin'],
                           'gin files to load')
@@ -30,11 +36,29 @@ wandb.init(sync_tensorboard=True, entity='krshna', project='safemrl', config=FLA
 
 def gin_bindings_from_config(config):
   gin_bindings = []
-  gin_bindings.append('safe_sac_agent.SafeSacAgentOnline.safety_gamma = {}'.format(config.safety_gamma))
-  gin_bindings.append('safe_sac_agent.SafeSacAgentOnline.target_safety = {}'.format(config.target_safety))
-  gin_bindings.append('safe_sac_agent.SafeSacAgentOnline.target_entropy = {}'.format(config.target_entropy))
-  gin_bindings.append('safe_sac_agent.SafeSacAgentOnline.reward_scale_factor = {}'.format(config.reward_scale_factor))
-  gin_bindings.append('LEARNING_RATE = {}'.format(config.lr))
+  if 'sac_safe_online.gin' in config.gin_files:
+    gin_bindings.append('safe_sac_agent.SafeSacAgentOnline.safety_gamma = {}'.format(config.safety_gamma))
+    gin_bindings.append('safe_sac_agent.SafeSacAgentOnline.target_safety = {}'.format(config.target_safety))
+    agent_prefix = 'safe_sac_agent.SafeSacAgentOnline'
+  elif 'sac.gin' in config.gin_files:
+    agent_prefix = 'sac_agent.SacAgent'
+  gin_bindings.append(
+      '{}.target_entropy = {}'.format(agent_prefix, config.target_entropy))
+  gin_bindings.append(
+      '{}.reward_scale_factor = {}'.format(agent_prefix, config.reward_scale_factor))
+  gin_bindings.append(
+      '{}.target_update_tau = {}'.format(agent_prefix, config.target_update_tau))
+  gin_bindings.append(
+    '{}.target_update_period = {}'.format(agent_prefix, config.target_update_period))
+  gin_bindings.append(
+    '{}.gamma = {}'.format(agent_prefix, config.gamma))
+  if config.lr:
+    gin_bindings.append('LEARNING_RATE = {}'.format(config.lr))
+  else:
+    gin_bindings.append('ac_opt / tf.keras.optimizers.Adam.learning_rate = {}'.format(config.actor_lr))
+    gin_bindings.append('cr_opt / tf.keras.optimizers.Adam.learning_rate = {}'.format(config.critic_lr))
+    gin_bindings.append('al_opt / tf.keras.optimizers.Adam.learning_rate = {}'.format(config.entropy_lr))
+
   gin_bindings.append('ENV_STR = "{}"'.format(config.env_str))
   return gin_bindings
 
