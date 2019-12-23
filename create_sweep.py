@@ -13,13 +13,13 @@ tune_config = tune.run(
             'critic_lr': hp.loguniform(1e-5, 1e-3, base=10),
             'entropy_lr': hp.loguniform(1e-5, 1e-3, base=10),
             'reward_scale_factor': hp.uniform('reward_scale_factor', 0, 2),
-            'initial_log_alpha': hp.uniform('initial_log_alpha', -2, 2)},
+            'initial_log_alpha': hp.uniform('initial_log_alpha', -2, 2),
+            'env_str': 'MinitaurRandFrictionGoalVelocityEnv-v0',
+            'gin_files': ['minitaur_default.gin', 'sac.gin', 'networks.gin'],
+            'lr': None},
         metric='Metrics/AverageReturn',
-        mode='max',
-        gin_files=['minitaur_default.gin', 'sac.gin', 'networks.gin'],
-        env_str='MinitaurRandFrictionGoalVelocityEnv-v0',
-        lr=None),
-    num_samples=10,
+        mode='max'),
+    num_samples=20,
 )
 
 tune_config.save('sac-sweep-tune-hyperopt.yaml')
