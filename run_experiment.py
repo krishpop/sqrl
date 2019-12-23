@@ -47,6 +47,7 @@ def main(_):
   gin_files = config.gin_files
   gin_bindings = gin_bindings_from_config(config)
   gin.parse_config_files_and_bindings(gin_files, gin_bindings)
+  tf.config.threading.set_inter_op_parallelism_threads(12)
   trainer.train_eval(FLAGS.root_dir, batch_size=config.batch_size, seed=FLAGS.seed,
                      eager_debug=FLAGS.eager_debug)
 
