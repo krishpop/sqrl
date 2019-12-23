@@ -39,9 +39,9 @@ sac_agent.SacAgent.reward_scale_factor = 1.0
 sac_agent.SacAgent.actor_optimizer = @ac_opt/tf.keras.optimizers.Adam()
 ac_opt/tf.keras.optimizers.Adam.learning_rate = %LEARNING_RATE
 sac_agent.SacAgent.critic_optimizer = @cr_opt/tf.keras.optimizers.Adam()
-cr_opt/tf.keras.optimizers.Adam.learning_rate = %SLOW_LEARNING_RATE
+cr_opt/tf.keras.optimizers.Adam.learning_rate = %LEARNING_RATE
 sac_agent.SacAgent.alpha_optimizer = @al_opt/tf.keras.optimizers.Adam()
-al_opt/tf.keras.optimizers.Adam.learning_rate = %SLOW_LEARNING_RATE
+al_opt/tf.keras.optimizers.Adam.learning_rate = %LEARNING_RATE
 
 # train_eval_ensemble.train_eval.gradient_clipping = 1.
 # train_eval_ensemble.train_eval.actor_learning_rate = %SLOW_LEARNING_RATE
