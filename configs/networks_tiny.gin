@@ -1,6 +1,1 @@
-import safemrl.algos.agents
-import tf_agents.networks.actor_distribution_network
-
-
-actor_distribution_network.ActorDistributionNetwork.fc_layer_params = (64, 64)
-agents.CriticNetwork.joint_fc_layer_params = (64, 64)
+LAYER_SIZE = 64

@@ -52,7 +52,7 @@ from safemrl.utils import metrics
 MAX_LOSS = 1e9
 
 SAFETY_ENVS = ['IndianWell', 'IndianWell2', 'IndianWell3', 'DrunkSpider',
-               'DrunkSpiderShort', 'MinitaurGoalVelocityEnv']
+               'DrunkSpiderShort', 'MinitaurGoalVelocityEnv', 'MinitaurRandFrictionGoalVelocityEnv']
 SAFETY_AGENTS = [safe_sac_agent.SafeSacAgent, safe_sac_agent.SafeSacAgentOnline]
 
 # How many steps does the loss have to be diverged for (too high, inf, nan)

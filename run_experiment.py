@@ -12,7 +12,7 @@ from absl import app
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string('root_dir', './tfagents/safe-sac-sweeps/', 'Root directory for writing logs/summaries/checkpoints.')
+flags.DEFINE_string('root_dir', '~/tfagents/safe-sac-sweeps/friction', 'Root directory for writing logs/summaries/checkpoints.')
 flags.DEFINE_string('env_str', 'MinitaurGoalVelocityEnv-v0', 'Environment string')
 flags.DEFINE_integer('batch_size', 256, 'batch size used for training')
 flags.DEFINE_float('safety_gamma', 0.7, 'Safety discount term used for TD backups')
@@ -73,12 +73,12 @@ def main(_):
   if os.environ.get('CONFIG_DIR'):
     gin.add_config_file_search_path(os.environ.get('CONFIG_DIR'))
   config = wandb.config
-  config.root_dir = osp.join(config.root_dir, str(os.environ.get('WANDB_RUN_ID', 0)))
+  config.update(dict(root_dir=osp.join(config.root_dir, str(os.environ.get('WANDB_RUN_ID', 0)))), allow_val_change=True)
   gin_files = config.gin_files
   gin_bindings = gin_bindings_from_config(config)
   gin.parse_config_files_and_bindings(gin_files, gin_bindings)
   tf.config.threading.set_inter_op_parallelism_threads(12)
-  trainer.train_eval(FLAGS.root_dir, batch_size=config.batch_size, seed=FLAGS.seed,
+  trainer.train_eval(config.root_dir, batch_size=config.batch_size, seed=FLAGS.seed,
                      train_metrics_callback=wandb_log_callback, eager_debug=FLAGS.eager_debug)
 
 
