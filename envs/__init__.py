@@ -50,6 +50,5 @@ if not registered:
     entry_point=minitaur.MinitaurGoalVelocityEnv,
     max_episode_steps=500,
     kwargs={'env_randomizer': randomizers}
-
   )
 

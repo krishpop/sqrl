@@ -19,6 +19,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import collections
 import math
 import os
 import time
@@ -463,15 +464,15 @@ def train_eval(
                                      metrics.AverageFallenMetric,
                                      metrics.AverageSuccessMetric)):
           # Plot failure as a fn of return
-          summaries = train_metrics.tf_summaries(
+          train_metrics.tf_summaries(
             train_step=global_step, step_metrics=train_metrics[:3])
         else:
-          summaries = train_metric.tf_summaries(
+          train_metric.tf_summaries(
               train_step=global_step, step_metrics=train_metrics[:2])
-        train_results.append((train_metric.name, summaries[0]))
+        train_results.append((train_metric.name, train_metric.result().numpy()))
 
       if train_metrics_callback is not None:
-        train_metrics_callback(train_results, global_step.numpy())
+        train_metrics_callback(collections.OrderedDict(train_results), global_step.numpy())
 
       global_step_val = global_step.numpy()
       if global_step_val % train_checkpoint_interval == 0:
