@@ -1,6 +1,8 @@
 import safemrl.envs.minitaur
 import safemrl.utils.metrics
+import safemrl.algos.agents
 import tf_agents.environments.suite_pybullet
+import tf_agents.networks.actor_distribution_network
 
 EP_LEN = 500
 ENV_STR = "MinitaurGoalVelocityEnv-v0"
@@ -29,3 +31,11 @@ minitaur.MinitaurGoalVelocityEnv.include_leg_model = True
 minitaur.MinitaurGoalVelocityEnv.goal_limit = 0.8
 minitaur.MinitaurGoalVelocityEnv.goal_vel = 0.4
 minitaur.MinitaurGoalVelocityEnv.butterworth = True
+
+actor_distribution_network.ActorDistributionNetwork.preprocessing_combiner = (
+    @agents.extract_observation_layer()
+)
+
+agents.CriticNetwork.preprocessing_combiner = (
+    @agents.extract_obs_merge_w_ac_layer()
+)

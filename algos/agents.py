@@ -80,6 +80,15 @@ def extract_obs_merge_w_ac_layer():
   return tf.keras.layers.Lambda(f)
 
 
+# HACK: inputs to concatenate have to be in list (not tuple) format
+# see "tensorflow_core/python/keras/layers/merge.py", line 378
+@gin.configurable
+def merge_obs_w_ac_layer():
+  def f(layer_input):
+    return tf.keras.layers.concatenate(list(layer_input), axis=-1)
+  return tf.keras.layers.Lambda(f)
+
+
 @gin.configurable
 def extract_observation_layer():
   return tf.keras.layers.Lambda(lambda obs: obs['observation'])
