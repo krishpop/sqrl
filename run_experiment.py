@@ -25,8 +25,9 @@ flags.DEFINE_float('lr', None, 'Learning rate for all optimizers')
 flags.DEFINE_float('actor_lr', 3e-4, 'Learning rate for actor')
 flags.DEFINE_float('critic_lr', 3e-4, 'Learning rate for critic')
 flags.DEFINE_float('entropy_lr', 3e-4, 'Learning rate for alpha')
-flags.DEFINE_float('target_update_tau', 0.005, 'Factor for soft update of the target networks')
-flags.DEFINE_integer('target_update_period', 1, 'Period for soft update of the target networks')
+flags.DEFINE_float('target_update_tau', 0.001, 'Factor for soft update of the target networks')
+flags.DEFINE_integer('target_update_period', 5, 'Period for soft update of the target networks')
+flags.DEFINE_integer('initial_collect_steps', 10000, 'Number of steps to collect with random policy')
 flags.DEFINE_float('initial_log_alpha', 0., 'Initial value for log_alpha')
 flags.DEFINE_float('gamma', 0.99, 'Future reward discount factor')
 flags.DEFINE_float('reward_scale_factor', 1.0, 'Reward scale factor for SacAgent')
@@ -60,16 +61,18 @@ def gin_bindings_from_config(config):
       config.update(dict(lr=10 ** config.lr), allow_val_change=True)
     gin_bindings.append('LEARNING_RATE = {}'.format(config.lr))
   else:
-    if config.actor_lr < 1:
+    if config.actor_lr < 0:
       config.update(dict(actor_lr=10**config.actor_lr), allow_val_change=True)
-    if config.critic_lr < 1:
+    if config.critic_lr < 0:
       config.update(dict(critic_lr=10**config.critic_lr), allow_val_change=True)
-    if config.entropy_lr < 1:
+    if config.entropy_lr < 0:
       config.update(dict(entropy_lr=10**config.entropy_lr), allow_val_change=True)
     gin_bindings.append('ac_opt/tf.keras.optimizers.Adam.learning_rate = {}'.format(config.actor_lr))
     gin_bindings.append('cr_opt/tf.keras.optimizers.Adam.learning_rate = {}'.format(config.critic_lr))
     gin_bindings.append('al_opt/tf.keras.optimizers.Adam.learning_rate = {}'.format(config.entropy_lr))
 
+  gin_bindings.append("init_collect/dynamic_step_driver.DynamicStepDriver.num_steps = {}".format(
+    config.initial_collect_steps))
   gin_bindings.append('ENV_STR = "{}"'.format(config.env_str))
   gin_bindings.append('NUM_STEPS = {}'.format(config.num_steps))
   gin_bindings.append('LAYER_SIZE = {}'.format(config.layer_size))
