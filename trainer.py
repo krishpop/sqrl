@@ -203,7 +203,7 @@ def train_eval(
         debug_summaries=debug_summaries
       )
     else:  # assume is using SacAgent
-      logging.debug(critic_net.input_tensor_spec())
+      logging.debug(critic_net.input_tensor_spec)
       tf_agent = agent_class(
         time_step_spec,
         action_spec,

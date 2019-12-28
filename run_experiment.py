@@ -13,12 +13,14 @@ from absl import app
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string('root_dir', '~/tfagents/sac-sweeps/friction', 'Root directory for writing logs/summaries/checkpoints.')
-flags.DEFINE_string('env_str', 'MinitaurRandFrictionGoalVelocityEnv-v0', 'Environment string')
+flags.DEFINE_string('root_dir', '~/tfagents/sac-sweeps/pddm_cube', 'Root directory for writing logs/summaries/checkpoints.')
+flags.DEFINE_string('env_str', 'pddm_cube-v0', 'Environment string')
+flags.DEFINE_integer('num_steps', 3000000, 'Number of training steps')
+flags.DEFINE_integer('layer_size', 500, 'Number of training steps')
 flags.DEFINE_integer('batch_size', 256, 'batch size used for training')
 flags.DEFINE_float('safety_gamma', 0.7, 'Safety discount term used for TD backups')
 flags.DEFINE_float('target_safety', 0.1, 'Target safety for safety critic')
-flags.DEFINE_integer('target_entropy', -16, 'Target entropy for policy')
+flags.DEFINE_integer('target_entropy', None, 'Target entropy for policy')
 flags.DEFINE_float('lr', None, 'Learning rate for all optimizers')
 flags.DEFINE_float('actor_lr', 3e-4, 'Learning rate for actor')
 flags.DEFINE_float('critic_lr', 3e-4, 'Learning rate for critic')
@@ -28,7 +30,7 @@ flags.DEFINE_integer('target_update_period', 1, 'Period for soft update of the t
 flags.DEFINE_float('initial_log_alpha', 0., 'Initial value for log_alpha')
 flags.DEFINE_float('gamma', 0.99, 'Future reward discount factor')
 flags.DEFINE_float('reward_scale_factor', 1.0, 'Reward scale factor for SacAgent')
-flags.DEFINE_multi_string('gin_files', ['minitaur_default.gin', 'sac.gin', 'networks.gin'],
+flags.DEFINE_multi_string('gin_files', ['pddm_cube.gin', 'sac.gin'],
                           'gin files to load')
 flags.DEFINE_boolean('eager_debug', False, 'Debug in eager mode if True')
 flags.DEFINE_integer('seed', None, 'Seed to seed envs and algorithm with')
@@ -69,6 +71,8 @@ def gin_bindings_from_config(config):
     gin_bindings.append('al_opt/tf.keras.optimizers.Adam.learning_rate = {}'.format(config.entropy_lr))
 
   gin_bindings.append('ENV_STR = "{}"'.format(config.env_str))
+  gin_bindings.append('NUM_STEPS = {}'.format(config.num_steps))
+  gin_bindings.append('LAYER_SIZE = {}'.format(config.layer_size))
   return gin_bindings
 
 
