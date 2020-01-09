@@ -52,7 +52,7 @@ from safemrl.utils import metrics
 # Loss value that is considered too high and training will be terminated.
 MAX_LOSS = 1e9
 
-SAFETY_ENVS = ['IndianWell', 'IndianWell2', 'IndianWell3', 'DrunkSpider',
+SAFETY_ENVS = ['IndianWell', 'IndianWell2', 'IndianWell3', 'DrunkSpider', 'pddm_cube',
                'DrunkSpiderShort', 'MinitaurGoalVelocityEnv', 'MinitaurRandFrictionGoalVelocityEnv']
 SAFETY_AGENTS = [safe_sac_agent.SafeSacAgent, safe_sac_agent.SafeSacAgentOnline]
 
@@ -311,7 +311,8 @@ def train_eval(
       config_saver = gin.tf.GinConfigSaverHook(train_dir, summarize_config=True)
       tf.function(config_saver.after_create_session)()
 
-    # collect_driver.run = common.function(collect_driver.run)
+    if agent_class not in SAFETY_AGENTS:
+      collect_driver.run = common.function(collect_driver.run)
     if eager_debug:
       tf.config.experimental_run_functions_eagerly(True)
 
