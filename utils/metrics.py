@@ -38,7 +38,6 @@ class AverageEarlyFailureMetric(py_metrics.StreamingMetric):
 
   def __init__(self,
                max_episode_len=500,
-               dtype=np.bool,
                name='AverageEarlyFailure',
                buffer_size=10,
                batch_size=None):
@@ -63,9 +62,10 @@ class AverageEarlyFailureMetric(py_metrics.StreamingMetric):
     """
     episode_steps = self._np_state.episode_steps
     is_last = np.where(trajectory.is_boundary())
+    not_last = np.where(~trajectory.is_boundary())
 
-    episode_steps[np.where(~trajectory.is_boundary())] += 1
-    if len(is_last) > 0:
+    episode_steps[not_last] += 1
+    if len(is_last[0]) > 0:
       self.add_to_buffer(episode_steps[is_last] < self._max_episode_len)
     episode_steps[is_last] = 0
 
@@ -98,7 +98,7 @@ class AverageFallenMetric(py_metrics.StreamingMetric):
 
     is_last = np.where(trajectory.is_boundary())
 
-    if is_last:
+    if len(is_last[0]) > 0:
       self.add_to_buffer(trajectory.observation['fallen'][is_last])
 
 
@@ -125,8 +125,87 @@ class AverageSuccessMetric(py_metrics.StreamingMetric):
 
     is_last = np.where(trajectory.is_last())
 
-    if is_last:
+    if len(is_last[0]) > 0:
       succ = np.logical_and(
           np.logical_not(trajectory.observation['fallen'][is_last]),
           trajectory.reward[is_last] > 0.)
       self.add_to_buffer(succ)
+
+
+@gin.configurable
+class MinitaurAverageSpeedMetric(py_metrics.StreamingMetric):
+  """Computes average early failure rate in buffer_size episodes."""
+
+  def __init__(self,
+               name='MinitaurAverageSpeed',
+               buffer_size=10,
+               batch_size=None):
+    """Creates a metric for minitaur speed stats."""
+    self._np_state = numpy_storage.NumpyState()
+    # Set a dummy value on self._np_state.obs_val so it gets included in
+    # the first checkpoint (before metric is first called).
+    self._np_state.episode_steps = np.array(0, dtype=float)
+    self._np_state.speed = np.array(0, dtype=float)
+    super(MinitaurAverageSpeedMetric, self).__init__(
+        name, buffer_size=buffer_size, batch_size=batch_size)
+
+  def _reset(self, batch_size):
+    """Resets stat gathering variables."""
+    self._np_state.episode_steps = np.zeros(shape=(batch_size,), dtype=np.int32)
+    self._np_state.speed = np.zeros(shape=(batch_size,), dtype=float)
+
+  def _batched_call(self, trajectory):
+    """Processes the trajectory to update the metric.
+
+    Args:
+      trajectory: a tf_agents.trajectory.Trajectory.
+    """
+    episode_steps = self._np_state.episode_steps
+    total_speed = self._np_state.speed
+    is_last = np.where(trajectory.is_boundary())
+    not_last = np.where(~trajectory.is_boundary())
+    total_speed[not_last] += trajectory.observation['current_vel'][not_last]
+    episode_steps[not_last] += 1
+
+    if len(is_last[0]) > 0:
+      self.add_to_buffer(total_speed[is_last]/episode_steps[is_last])
+    episode_steps[is_last] = 0
+    total_speed[is_last] = 0
+
+
+@gin.configurable
+class MinitaurAverageMaxSpeedMetric(py_metrics.StreamingMetric):
+  """Computes average early failure rate in buffer_size episodes."""
+
+  def __init__(self,
+               name='MinitaurAverageMaxSpeed',
+               buffer_size=10,
+               batch_size=None):
+    """Creates a metric for minitaur speed stats."""
+    self._np_state = numpy_storage.NumpyState()
+    # Set a dummy value on self._np_state.obs_val so it gets included in
+    # the first checkpoint (before metric is first called).
+    self._np_state.speed = np.array(0, dtype=float)
+    super(MinitaurAverageMaxSpeedMetric, self).__init__(
+        name, buffer_size=buffer_size, batch_size=batch_size)
+
+  def _reset(self, batch_size):
+    """Resets stat gathering variables."""
+    self._np_state.speed = np.zeros(shape=(batch_size,), dtype=float)
+
+  def _batched_call(self, trajectory):
+    """Processes the trajectory to update the metric.
+
+    Args:
+      trajectory: a tf_agents.trajectory.Trajectory.
+    """
+    max_speed = self._np_state.speed
+    is_last = np.where(trajectory.is_boundary())
+    not_last = np.where(~trajectory.is_boundary())
+    if len(not_last[0]) > 0:
+      max_speed[not_last] = np.max([trajectory.observation['current_vel'][not_last],
+                                    max_speed[not_last]], axis=0)
+
+    if len(is_last[0]) > 0:
+      self.add_to_buffer(max_speed[is_last])
+    max_speed[is_last] = 0

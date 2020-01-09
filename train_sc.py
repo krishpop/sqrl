@@ -193,7 +193,7 @@ def train_sc(tf_agent, safety_critic, optimizer, replay_buffer, test_agent,
   avg_loss = tf.keras.metrics.Mean('loss', dtype=tf.float32)
 
   test_rb_data = test_rb.gather_all()
-  test_safe_rew = agents.process_replay_buffer(test_rb, as_tensor=False)
+  test_safe_rew = misc.process_replay_buffer(test_rb, as_tensor=False)
 
   boundary = np.where(test_rb_data.is_boundary().numpy())[1]
   boundary_states = tf.gather(test_rb_data.observation[0], boundary)
@@ -233,7 +233,7 @@ def train_sc(tf_agent, safety_critic, optimizer, replay_buffer, test_agent,
           replay_buffer.as_dataset(
               sample_batch_size=batch_size,
               num_parallel_calls=n_parallel).prefetch(batch_size))
-      safe_rew = agents.process_replay_buffer(replay_buffer, as_tensor=False)
+      safe_rew = misc.process_replay_buffer(replay_buffer, as_tensor=False)
 
     batch = next(ds)
     loss = train_step(tf_agent, safety_critic, batch, safe_rew, optimizer)

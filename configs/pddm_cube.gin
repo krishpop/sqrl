@@ -1,6 +1,7 @@
 import pddm.envs
 import safemrl.utils.metrics
 import safemrl.algos.agents
+import safemrl.utils.misc
 import tf_agents.environments.suite_mujoco
 
 ENV_STR = 'pddm_cube-v0'
@@ -14,4 +15,4 @@ EVAL_METRICS = []
 
 suite_mujoco.load.max_episode_steps = %EP_LEN
 
-agents.CriticNetwork.preprocessing_combiner = @agents.merge_obs_w_ac_layer()
+agents.CriticNetwork.preprocessing_combiner = @misc.merge_obs_w_ac_layer()

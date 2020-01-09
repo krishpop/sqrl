@@ -35,63 +35,9 @@ from tf_agents.policies import actor_policy
 from tf_agents.policies import boltzmann_policy
 from tf_agents.specs import tensor_spec
 from tf_agents.utils import nest_utils
-from tf_agents.utils import common
 from tf_agents.networks import normal_projection_network
 from tf_agents.networks import utils
 from tf_agents.distributions import utils as dist_utils
-
-
-def process_replay_buffer(replay_buffer, max_ep_len=500, k=1, as_tensor=True):
-  """Process replay buffer to infer safety rewards with episode boundaries."""
-  rb_data = replay_buffer.gather_all()
-  rew = rb_data.reward
-
-  boundary_idx = np.where(rb_data.is_boundary().numpy())[1]
-
-  last_idx = 0
-  k_labels = []
-
-  for term_idx in boundary_idx:
-    # TODO(krshna): remove +1?
-    fail = 1 - int(term_idx - last_idx >= max_ep_len + 1)
-    ep_rew = tf.gather(rew, np.arange(last_idx, term_idx), axis=1)
-    labels = np.zeros(ep_rew.shape_as_list())  # ignore obs dim
-    labels[:, Ellipsis, -k:] = fail
-    k_labels.append(labels)
-    last_idx = term_idx
-
-  flat_labels = np.concatenate(k_labels, axis=-1).astype(np.float32)
-  n_flat_labels = flat_labels.shape[1]
-  n_rews = rb_data.reward.shape_as_list()[1]
-  safe_rew_labels = np.pad(
-      flat_labels, ((0, 0), (0, n_rews - n_flat_labels)), mode='constant')
-  if as_tensor:
-    return tf.to_float(safe_rew_labels)
-  return safe_rew_labels
-
-
-# Pre-processor layers to remove observation from observation dict returned by
-# goal-conditioned point-mass environment.
-@gin.configurable
-def extract_obs_merge_w_ac_layer():
-  def f(layer_input):
-    return tf.keras.layers.concatenate(
-        [layer_input[0]['observation'], layer_input[1]], axis=1)
-  return tf.keras.layers.Lambda(f)
-
-
-# HACK: inputs to concatenate have to be in list (not tuple) format
-# see "tensorflow_core/python/keras/layers/merge.py", line 378
-@gin.configurable
-def merge_obs_w_ac_layer():
-  def f(layer_input):
-    return tf.keras.layers.concatenate(list(layer_input), axis=-1)
-  return tf.keras.layers.Lambda(f)
-
-
-@gin.configurable
-def extract_observation_layer():
-  return tf.keras.layers.Lambda(lambda obs: obs['observation'])
 
 
 @gin.configurable
@@ -102,7 +48,6 @@ def normal_projection_net(action_spec,
   del init_action_stddev
   return normal_projection_network.NormalProjectionNetwork(
       action_spec,
-      # mean_transform=None,
       state_dependent_std=True,
       init_means_output_factor=init_means_output_factor,
       std_transform=sac_agent.std_clip_transform,

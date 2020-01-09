@@ -148,18 +148,63 @@ class MinitaurGoalVelocityEnv(minitaur_extended_env.MinitaurExtendedEnv):
 class TaskAgnWrapper(gym.Wrapper):
   def __init__(self, env):
     super(TaskAgnWrapper, self).__init__(env)
-    self.observation_space = gym.spaces.Dict({
-      'observation': self.observation_space,
-      'task_agn_rew': gym.spaces.Box(np.array(0), np.array(1))
-    })
+    if isinstance(self.observation_space, gym.spaces.Dict):
+       # add task_agn_rew to observation space dict, instead of nesting
+      spaces = list(self.observation_space.spaces.items())
+      spaces.append(('task_agn_rew', gym.spaces.Box(0, 1, shape=())))
+      self.observation_space = gym.spaces.Dict(dict(spaces))
+    else:
+      self.observation_space = gym.spaces.Dict({
+        'observation': self.observation_space,
+        'task_agn_rew': gym.spaces.Box(0, 1, shape=())
+      })
 
   def step(self, action):
-    o, r, d, i = super(TaskAgnWrapper, self).step(action)
-    o_dict = {'observation': o, 'task_agn_rew': 0.}
+    o, r, d, i = self.env.step(action)
+    if isinstance(o, dict):
+      o['task_agn_rew'] = 0.
+    else:
+      o = {'observation': o, 'task_agn_rew': 0.}
     if d and self.unwrapped.is_fallen():
-      o_dict['task_agn_rew'] = 1.
-    return o_dict, r, d, i
+      o['task_agn_rew'] = 1.
+    return o, r, d, i
 
   def reset(self, **kwargs):
-    o = super(TaskAgnWrapper, self).reset(**kwargs)
-    return {'observation': o, 'task_agn_rew': 0.}
+    o = self.env.reset(**kwargs)
+    if isinstance(o, dict):
+      o['task_agn_rew'] = 0.
+    else:
+      o = {'observation': o, 'task_agn_rew': 0.}
+    return o
+
+
+@gin.configurable
+class CurrentVelWrapper(gym.Wrapper):
+  def __init__(self, env):
+    super(CurrentVelWrapper, self).__init__(env)
+    if isinstance(self.observation_space, gym.spaces.Dict):
+       # add task_agn_rew to observation space dict, instead of nesting
+      spaces = list(self.observation_space.spaces.items())
+      spaces.append(('current_vel', gym.spaces.Box(-np.inf, np.inf, shape=())))
+      self.observation_space = gym.spaces.Dict(dict(spaces))
+    else:
+      self.observation_space = gym.spaces.Dict({
+        'observation': self.observation_space,
+        'current_vel': gym.spaces.Box(-np.inf, np.inf, shape=())
+      })
+
+  def step(self, action):
+    o, r, d, i = self.env.step(action)
+    if isinstance(o, dict):
+      o['current_vel'] = self.unwrapped.current_vel
+    else:
+      o = {'observation': o, 'current_vel': self.unwrapped.current_vel}
+    return o, r, d, i
+
+  def reset(self, **kwargs):
+    o = self.env.reset(**kwargs)
+    if isinstance(o, dict):
+      o['current_vel'] = self.unwrapped.current_vel
+    else:
+      o = {'observation': o, 'current_vel': self.unwrapped.current_vel}
+    return o
