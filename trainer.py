@@ -275,13 +275,8 @@ def train_eval(
           safety_critic=tf_agent._safety_critic_network,  # pylint: disable=protected-access
           global_step=global_step)
     rb_ckpt_dir = os.path.join(train_dir, 'replay_buffer')
-    if online_critic:
-      rb_checkpointer = common.Checkpointer(
-        ckpt_dir=rb_ckpt_dir, max_to_keep=1, replay_buffer=replay_buffer,
-        online_replay_buffer=online_replay_buffer)
-    else:
-      rb_checkpointer = common.Checkpointer(
-          ckpt_dir=rb_ckpt_dir, max_to_keep=1, replay_buffer=replay_buffer)
+    rb_checkpointer = common.Checkpointer(
+        ckpt_dir=rb_ckpt_dir, max_to_keep=1, replay_buffer=replay_buffer)
 
     if load_root_dir:
       load_root_dir = os.path.expanduser(load_root_dir)
@@ -368,7 +363,7 @@ def train_eval(
         if env_name.split('-')[0] in SAFETY_ENVS:
           safe_rew = experience.observation['task_agn_rew'][:, 1]
         else:
-          safe_rew = agents.process_replay_buffer(
+          safe_rew = misc.process_replay_buffer(
               online_replay_buffer, as_tensor=True)
           safe_rew = tf.gather(safe_rew, tf.squeeze(buf_info.ids), axis=1)
         ret = tf_agent.train_sc(experience, safe_rew, weights=None)

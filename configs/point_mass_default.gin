@@ -1,5 +1,7 @@
 import safemrl.envs.point_mass
 import safemrl.utils.metrics
+import safemrl.utils.misc
+import safemrl.algos.agents
 import safemrl.trainer
 import safemrl.utils.safe_dynamic_episode_driver
 import tf_agents.networks.actor_distribution_network
@@ -32,8 +34,8 @@ point_mass.PointMassAcScaleEnv.domain_rand = True
 point_mass.PointMassAcScaleEnv.domain_rand = True
 
 actor_distribution_network.ActorDistributionNetwork.preprocessing_combiner = (
-    @agents.extract_observation_layer()
+    @misc.extract_observation_layer()
 )
 agents.CriticNetwork.preprocessing_combiner = (
-    @agents.extract_obs_merge_w_ac_layer()
+    @misc.extract_obs_merge_w_ac_layer()
 )
