@@ -44,7 +44,6 @@ from safemrl.algos import agents
 from safemrl.algos import safe_sac_agent
 from safemrl.algos import ensemble_sac_agent
 from safemrl.utils import safe_dynamic_episode_driver
-from safemrl import envs
 from safemrl.utils import misc
 from safemrl.utils import metrics
 
@@ -52,7 +51,7 @@ from safemrl.utils import metrics
 # Loss value that is considered too high and training will be terminated.
 MAX_LOSS = 1e9
 
-SAFETY_ENVS = ['IndianWell', 'IndianWell2', 'IndianWell3', 'DrunkSpider',
+SAFETY_ENVS = ['IndianWell', 'IndianWell2', 'IndianWell3', 'DrunkSpider', 'pddm_cube',
                'DrunkSpiderShort', 'MinitaurGoalVelocityEnv', 'MinitaurRandFrictionGoalVelocityEnv']
 SAFETY_AGENTS = [safe_sac_agent.SafeSacAgent, safe_sac_agent.SafeSacAgentOnline]
 
@@ -85,8 +84,9 @@ def train_eval(
     train_sc_interval=1000,
     online_critic=False,
     n_envs=None,
+    finetune_sc=False,
     # Ensemble Critic training args
-    n_critics=None,
+    n_critics=30,
     critic_learning_rate=3e-4,
     # Params for train
     batch_size=256,
@@ -387,8 +387,9 @@ def train_eval(
       tf_agent._safe_policy._safety_threshold = 0.6
       resample_counter = online_collect_policy._resample_counter
       mean_resample_ac = tf.keras.metrics.Mean(name='mean_unsafe_ac_freq')
-      for _ in range(train_sc_steps):
-        sc_loss, lambda_loss = critic_train_step()  # pylint: disable=unused-variable
+      if load_root_dir is None or finetune_sc:  # don't fine-tune safety critic
+        for _ in range(train_sc_steps):
+          sc_loss, lambda_loss = critic_train_step()  # pylint: disable=unused-variable
       tf_agent._safe_policy._safety_threshold = safety_eps
 
     while (global_step.numpy() <= num_global_steps and

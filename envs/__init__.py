@@ -19,6 +19,7 @@ from __future__ import absolute_import
 
 import gym
 from safemrl.envs import minitaur
+from safemrl.envs import env_randomizers
 from pybullet_envs.minitaur.envs.env_randomizers import minitaur_terrain_randomizer
 from pybullet_envs.minitaur.envs.env_randomizers import minitaur_env_randomizer_from_config
 from gym.envs.registration import register
@@ -33,16 +34,23 @@ if not registered:
   )
 
   randomizers = []
-  randomizers.append(minitaur_env_randomizer_from_config.MinitaurEnvRandomizerFromConfig(
-    'lat_params'
-  ))
+  randomizers.append(env_randomizers.MinitaurFootFrictionEnvRandomizer())
   register(
     id="MinitaurRandFrictionGoalVelocityEnv-v0",
     entry_point=minitaur.MinitaurGoalVelocityEnv,
     max_episode_steps=500,
     kwargs={'env_randomizer': randomizers}
-
   )
+
+  randomizers = []
+  randomizers.append(env_randomizers.MinitaurFootFrictionEnvTaskRandomizer())
+  register(
+    id="MinitaurRandFrictionGoalVelocityEnv-v1",
+    entry_point=minitaur.MinitaurGoalVelocityEnv,
+    max_episode_steps=500,
+    kwargs={'env_randomizer': randomizers}
+  )
+
   randomizers = []
   randomizers.append(minitaur_terrain_randomizer.MinitaurTerrainRandomizer())
   register(

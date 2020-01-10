@@ -52,9 +52,9 @@ class MinitaurGoalVelocityEnv(minitaur_extended_env.MinitaurExtendedEnv):
                max_steps=500,
                debug=False,
                butterworth=False,
+               friction=None,
                **kwargs):
     self.set_sample_goal_args(goal_limit, goal_vel)
-    # self._goal_vel = None
     self._current_vel = 0.
     self._debug = debug
     self._max_steps = max_steps
@@ -62,6 +62,7 @@ class MinitaurGoalVelocityEnv(minitaur_extended_env.MinitaurExtendedEnv):
     if not kwargs:
       kwargs = ENV_DEFAULTS
     super(MinitaurGoalVelocityEnv, self).__init__(**kwargs)
+    self.set_foot_friction(friction)
 
   @property
   def current_vel(self):
@@ -93,6 +94,11 @@ class MinitaurGoalVelocityEnv(minitaur_extended_env.MinitaurExtendedEnv):
     if swing0 > maximum_swing_angle or swing1 > maximum_swing_angle:
       return True
     return False
+
+  def set_foot_friction(self, friction=None):
+    self._foot_friction = friction
+    if friction:
+      self.minitaur.SetFootFriction(friction)
 
   def set_sample_goal_args(self, goal_limit=None, goal_vel=None):
     if goal_limit is not None:
