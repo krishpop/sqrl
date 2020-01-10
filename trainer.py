@@ -311,7 +311,8 @@ def train_eval(
       config_saver = gin.tf.GinConfigSaverHook(train_dir, summarize_config=True)
       tf.function(config_saver.after_create_session)()
 
-    # collect_driver.run = common.function(collect_driver.run)
+    if agent_class not in SAFETY_AGENTS:
+      collect_driver.run = common.function(collect_driver.run)
     if eager_debug:
       tf.config.experimental_run_functions_eagerly(True)
 

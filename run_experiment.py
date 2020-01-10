@@ -13,10 +13,10 @@ from absl import app
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string('root_dir', '~/tfagents/sac-sweeps/pddm_cube', 'Root directory for writing logs/summaries/checkpoints.')
+flags.DEFINE_string('root_dir', '~/tfagents/safe-sac-sweeps/pddm_cube', 'Root directory for writing logs/summaries/checkpoints.')
 flags.DEFINE_string('env_str', 'pddm_cube-v0', 'Environment string')
-flags.DEFINE_integer('num_steps', 3000000, 'Number of training steps')
-flags.DEFINE_integer('layer_size', 500, 'Number of training steps')
+flags.DEFINE_integer('num_steps', 2000000, 'Number of training steps')
+flags.DEFINE_integer('layer_size', 256, 'Number of training steps')
 flags.DEFINE_integer('batch_size', 256, 'batch size used for training')
 flags.DEFINE_float('safety_gamma', 0.7, 'Safety discount term used for TD backups')
 flags.DEFINE_float('target_safety', 0.1, 'Target safety for safety critic')
@@ -26,12 +26,12 @@ flags.DEFINE_float('actor_lr', 3e-4, 'Learning rate for actor')
 flags.DEFINE_float('critic_lr', 3e-4, 'Learning rate for critic')
 flags.DEFINE_float('entropy_lr', 3e-4, 'Learning rate for alpha')
 flags.DEFINE_float('target_update_tau', 0.001, 'Factor for soft update of the target networks')
-flags.DEFINE_integer('target_update_period', 5, 'Period for soft update of the target networks')
+flags.DEFINE_integer('target_update_period', 1, 'Period for soft update of the target networks')
 flags.DEFINE_integer('initial_collect_steps', 10000, 'Number of steps to collect with random policy')
 flags.DEFINE_float('initial_log_alpha', 0., 'Initial value for log_alpha')
 flags.DEFINE_float('gamma', 0.99, 'Future reward discount factor')
 flags.DEFINE_float('reward_scale_factor', 1.0, 'Reward scale factor for SacAgent')
-flags.DEFINE_multi_string('gin_files', ['pddm_cube.gin', 'sac.gin'],
+flags.DEFINE_multi_string('gin_files', ['pddm_cube.gin', 'sac_safe_online.gin'],
                           'gin files to load')
 flags.DEFINE_boolean('eager_debug', False, 'Debug in eager mode if True')
 flags.DEFINE_integer('seed', None, 'Seed to seed envs and algorithm with')
@@ -56,11 +56,11 @@ def gin_bindings_from_config(config):
   gin_bindings.append(
     '{}.target_update_period = {}'.format(agent_prefix, config.target_update_period))
   gin_bindings.append('{}.gamma = {}'.format(agent_prefix, config.gamma))
-  if config.lr:
-    if config.lr < 1:  # HACK: hp.loguniform not working
+  if config.lr and not wandb.run.resumed:  # do not update config if resuming run
+    if config.lr < 0:  # HACK: hp.loguniform not working
       config.update(dict(lr=10 ** config.lr), allow_val_change=True)
     gin_bindings.append('LEARNING_RATE = {}'.format(config.lr))
-  else:
+  elif not wandb.run.resumed:
     if config.actor_lr < 0:
       config.update(dict(actor_lr=10**config.actor_lr), allow_val_change=True)
     if config.critic_lr < 0:
@@ -89,7 +89,8 @@ def main(_):
   if os.environ.get('CONFIG_DIR'):
     gin.add_config_file_search_path(os.environ.get('CONFIG_DIR'))
   config = wandb.config
-  config.update(dict(root_dir=osp.join(config.root_dir, str(os.environ.get('WANDB_RUN_ID', 0)))), allow_val_change=True)
+  if not wandb.run.resumed:  # do not make changes  
+    config.update(dict(root_dir=osp.join(config.root_dir, str(os.environ.get('WANDB_RUN_ID', 0)))), allow_val_change=True)
   gin_files = config.gin_files
   gin_bindings = gin_bindings_from_config(config)
   gin.parse_config_files_and_bindings(gin_files, gin_bindings)
