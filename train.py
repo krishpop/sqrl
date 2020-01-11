@@ -64,6 +64,10 @@ def main(_):
   logging.debug('Executing eagerly: %s', tf.executing_eagerly())
   if os.environ.get('CONFIG_DIR'):
     gin.add_config_file_search_path(os.environ.get('CONFIG_DIR'))
+  root_dir = FLAGS.root_dir
+  if os.environ.get('EXP_DIR'):
+    root_dir = os.path.join(os.environ.get('EXP_DIR'), root_dir)
+
   logging.debug('parsing config files: %s', FLAGS.gin_file)
   if FLAGS.seed:
     # bindings.append(('trainer.train_eval.seed', FLAGS.seed))
@@ -72,12 +76,8 @@ def main(_):
     tf.compat.v1.set_random_seed(FLAGS.seed)
     logging.debug('Set seed: %d', FLAGS.seed)
   gin.parse_config_files_and_bindings(FLAGS.gin_file, FLAGS.gin_param, skip_unknown=True)
-  if FLAGS.debug:
-    logging.set_verbosity(logging.DEBUG)
-  else:
-    logging.set_verbosity(logging.INFO)
 
-  trainer.train_eval(FLAGS.root_dir, eager_debug=FLAGS.eager_debug, seed=FLAGS.seed)
+  trainer.train_eval(root_dir, eager_debug=FLAGS.eager_debug, seed=FLAGS.seed)
 
 
 if __name__ == '__main__':

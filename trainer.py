@@ -38,20 +38,27 @@ from tf_agents.networks import actor_distribution_network
 from tf_agents.policies import random_tf_policy
 from tf_agents.replay_buffers import tf_uniform_replay_buffer
 from tf_agents.replay_buffers import episodic_replay_buffer
+from tf_agents.specs import tensor_spec
 from tf_agents.utils import common
 
 from safemrl.algos import agents
 from safemrl.algos import safe_sac_agent
 from safemrl.algos import ensemble_sac_agent
+from safemrl.algos import wcpg_agent
 from safemrl.utils import safe_dynamic_episode_driver
 from safemrl.utils import misc
 from safemrl.utils import metrics
 
+try:
+  import highway_env
+except ImportError:
+  logging.debug("Could not import highway_env")
 
 # Loss value that is considered too high and training will be terminated.
 MAX_LOSS = 1e9
 
 SAFETY_ENVS = ['IndianWell', 'IndianWell2', 'IndianWell3', 'DrunkSpider', 'pddm_cube',
+               'SafemrlCube',
                'DrunkSpiderShort', 'MinitaurGoalVelocityEnv', 'MinitaurRandFrictionGoalVelocityEnv']
 SAFETY_AGENTS = [safe_sac_agent.SafeSacAgent, safe_sac_agent.SafeSacAgentOnline]
 
@@ -88,6 +95,9 @@ def train_eval(
     # Ensemble Critic training args
     n_critics=30,
     critic_learning_rate=3e-4,
+    # Wcpg Critic args
+    critic_preprocessing_layer_size=256,
+    actor_preprocessing_layer_size=256,
     # Params for train
     batch_size=256,
     # Params for eval
@@ -167,14 +177,28 @@ def train_eval(
     logging.debug('obs spec: %s', observation_spec)
     logging.debug('action spec: %s', action_spec)
 
-    actor_net = actor_distribution_network.ActorDistributionNetwork(
-      observation_spec,
-      action_spec,
-      fc_layer_params=actor_fc_layers,
-      continuous_projection_net=agents.normal_projection_net)
-    critic_net = agents.CriticNetwork(
-      (observation_spec, action_spec),
-      joint_fc_layer_params=critic_joint_fc_layers)
+    if agent_class is not wcpg_agent.WcpgAgent:
+      actor_net = actor_distribution_network.ActorDistributionNetwork(
+        observation_spec,
+        action_spec,
+        fc_layer_params=actor_fc_layers,
+        continuous_projection_net=agents.normal_projection_net)
+      critic_net = agents.CriticNetwork(
+        (observation_spec, action_spec),
+        joint_fc_layer_params=critic_joint_fc_layers)
+    else:
+      alpha_spec = tensor_spec.BoundedTensorSpec(shape=(), dtype=tf.float32, minimum=0., maximum=1.,
+                                                 name='alpha')
+      input_tensor_spec = (observation_spec, action_spec, alpha_spec)
+      critic_preprocessing_layers = (tf.keras.layers.Dense(critic_preprocessing_layer_size),
+                                     tf.keras.layers.Dense(critic_preprocessing_layer_size),
+                                     tf.keras.layers.Lambda(lambda x: x))
+      critic_net = agents.DistributionalCriticNetwork(input_tensor_spec,
+                                                      joint_fc_layer_params=critic_joint_fc_layers)
+      actor_preprocessing_layers = (tf.keras.layers.Dense(actor_preprocessing_layer_size),
+                                    tf.keras.layers.Dense(actor_preprocessing_layer_size),
+                                    tf.keras.layers.Lambda(lambda x: x))
+      actor_net = agents.WcpgActorNetwork(input_tensor_spec, preprocessing_layers=actor_preprocessing_layers)
 
     if agent_class in SAFETY_AGENTS:
       safety_critic_net = agents.CriticNetwork(
@@ -356,6 +380,12 @@ def train_eval(
       online_dataset = online_replay_buffer.as_dataset(
           num_parallel_calls=3, sample_batch_size=batch_size, num_steps=2).prefetch(3)
       online_iterator = iter(online_dataset)
+      critic_metrics = [tf.keras.metrics.AUC(name='safety_critic_auc'),
+                        tf.keras.metrics.TruePositives(name='safety_critic_tp'),
+                        tf.keras.metrics.FalsePositives(name='safety_critic_fp'),
+                        tf.keras.metrics.TrueNegatives(name='safety_critic_tn'),
+                        tf.keras.metrics.FalseNegatives(name='safety_critic_fn'),
+                        tf.keras.metrics.BinaryAccuracy(name='safety_critic_acc')]
 
       @common.function
       def critic_train_step():
@@ -367,7 +397,7 @@ def train_eval(
           safe_rew = misc.process_replay_buffer(
               online_replay_buffer, as_tensor=True)
           safe_rew = tf.gather(safe_rew, tf.squeeze(buf_info.ids), axis=1)
-        ret = tf_agent.train_sc(experience, safe_rew, weights=None)
+        ret = tf_agent.train_sc(experience, safe_rew, metrics=critic_metrics, weights=None)
         return ret
 
     @common.function
@@ -462,12 +492,17 @@ def train_eval(
                                      metrics.AverageFallenMetric,
                                      metrics.AverageSuccessMetric)):
           # Plot failure as a fn of return
-          train_metrics.tf_summaries(
+          train_metric.tf_summaries(
             train_step=global_step, step_metrics=train_metrics[:3])
         else:
           train_metric.tf_summaries(
               train_step=global_step, step_metrics=train_metrics[:2])
         train_results.append((train_metric.name, train_metric.result().numpy()))
+      if online_critic:
+        for critic_metric in critic_metrics:
+          train_results.append(critic_metric.name, critic_metric.result().numpy())
+          critic_metric.reset_states()
+
 
       if train_metrics_callback is not None:
         train_metrics_callback(collections.OrderedDict(train_results), global_step.numpy())

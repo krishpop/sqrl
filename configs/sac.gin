@@ -16,6 +16,7 @@ NUM_STEPS = 1000000
 LEARNING_RATE = 3e-4
 SLOW_LEARNING_RATE = 1e-5
 AGENT_CLASS = @sac_agent.SacAgent
+INITIAL_NUM_STEPS = %EP_LEN
 
 trainer.train_eval.env_name = %ENV_STR
 trainer.train_eval.env_load_fn = %ENV_LOAD_FN
@@ -28,7 +29,7 @@ trainer.train_eval.keep_rb_checkpoint = False
 trainer.train_eval.debug_summaries = True
 
 trainer.train_eval.initial_collect_driver_class = @init_collect/dynamic_step_driver.DynamicStepDriver
-init_collect/dynamic_step_driver.DynamicStepDriver.num_steps = %EP_LEN
+init_collect/dynamic_step_driver.DynamicStepDriver.num_steps = %INITIAL_NUM_STEPS
 trainer.train_eval.collect_driver_class = @collect_driver/dynamic_step_driver.DynamicStepDriver
 collect_driver/dynamic_step_driver.DynamicStepDriver.num_steps = 1
 

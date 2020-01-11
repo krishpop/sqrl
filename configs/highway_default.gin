@@ -1,21 +1,22 @@
 import pddm.envs
 import safemrl.utils.metrics
 import safemrl.algos.agents
-import safemrl.envs.pddm_cube
+import safemrl.envs.highway
 import safemrl.utils.misc
-import tf_agents.environments.suite_mujoco
+import safemrl.utils.external_configurables
+import tf_agents.environments.suite_gym
 import tf_agents.networks.actor_distribution_network
 
-ENV_STR = 'pddm_cube-v0'
-ENV_LOAD_FN = @suite_mujoco.load
-EP_LEN = 1000
+ENV_STR = 'highway-v0'
+ENV_LOAD_FN = @suite_gym.load
+EP_LEN = 40
 TRAIN_METRICS = [
     @metrics.AverageEarlyFailureMetric()
 ]
 metrics.AverageEarlyFailureMetric.max_episode_len = %EP_LEN
 EVAL_METRICS = []
 
-suite_mujoco.load.max_episode_steps = %EP_LEN
+suite_gym.load.max_episode_steps = %EP_LEN
 
 actor_distribution_network.ActorDistributionNetwork.preprocessing_combiner = (
     @misc.extract_observation_layer()
@@ -25,5 +26,4 @@ agents.CriticNetwork.preprocessing_combiner = (
     @misc.extract_obs_merge_w_ac_layer()
 )
 
-suite_mujoco.load.gym_env_wrappers = (@pddm_cube.CubeTaskAgnWrapper,)
-
+suite_gym.load.gym_env_wrappers = (@gym.wrappers.FlattenObservation, @highway_env.ContAcWrapper, @highway_env.TaskAgnWrapper)

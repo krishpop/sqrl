@@ -667,7 +667,7 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
     return time_steps, actions, next_time_steps  #, policy_steps.info
 
   @common.function
-  def train_sc(self, experience, safe_rew, weights=None):
+  def train_sc(self, experience, safe_rew, weights=None, metrics=None):
     """Returns a train op to update the agent's networks.
 
     This method trains with the provided batched experience.
@@ -698,7 +698,8 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
           next_time_steps,
           gamma=self._safety_gamma,
           safety_rewards=safe_rew,
-          weights=weights)
+          weights=weights,
+          metrics=metrics)
     tf.debugging.check_numerics(safety_critic_loss, 'Critic loss is inf or '
                                 'nan.')
     safety_critic_grads = tape.gradient(safety_critic_loss,
@@ -889,7 +890,8 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
                          next_time_steps,
                          safety_rewards,
                          gamma=1.,
-                         weights=None):
+                         weights=None,
+                         metrics=None):
     """Computes the critic loss for SAC training.
 
     Args:
@@ -931,6 +933,15 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
 
       # Take the mean across the batch.
       safety_critic_loss = tf.reduce_mean(input_tensor=safety_critic_loss)
+
+      if metrics:
+        for metric in metrics:
+          if isinstance(metric, tf.keras.metrics.AUC):
+            metric.update_state(safety_rewards, pred_td_targets)
+          else:
+            rew_pred = tf.greater_equal(pred_td_targets,
+                                        self._target_safety)
+            metric.update_state(safety_rewards, rew_pred)
 
       if self._debug_summaries:
         pred_td_targets = tf.nn.sigmoid(pred_td_targets)

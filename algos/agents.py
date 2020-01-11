@@ -31,6 +31,7 @@ import tensorflow as tf
 from tf_agents.agents.sac import sac_agent
 from tf_agents.networks import encoding_network
 from tf_agents.networks import network
+from tf_agents.networks import actor_distribution_network
 from tf_agents.policies import actor_policy
 from tf_agents.policies import boltzmann_policy
 from tf_agents.specs import tensor_spec
@@ -247,6 +248,118 @@ class CriticNetwork(network.Network):
     return tf.reshape(q_val, [-1]), network_state
 
 
+def _critic_normal_projection_net(output_spec,
+                                  init_stddev=0.35,
+                                  init_means_output_factor=0.1):
+  std_bias_initializer_value = np.log(np.exp(init_stddev) - 1)
+
+  return normal_projection_network.NormalProjectionNetwork(
+      output_spec,
+      init_means_output_factor=init_means_output_factor,
+      std_bias_initializer_value=std_bias_initializer_value,
+      scale_distribution=False)
+
+
+@gin.configurable
+class DistributionalCriticNetwork(network.DistributionNetwork):
+  """DistributionalCriticNetwork implemented with encoder networks"""
+
+  def __init__(
+      self,
+      input_tensor_spec,
+      preprocessing_layer_size=64,
+      joint_fc_layer_params=None,
+      joint_dropout_layer_params=None,
+      kernel_initializer=tf.compat.v1.keras.initializers.VarianceScaling(
+          scale=0.01, mode='fan_in', distribution='uniform'),
+      activation_fn=tf.nn.relu,
+      name='DistributionalCriticNetwork'):
+    """Creates an instance of `DistributionalCriticNetwork`.
+
+    Args:
+      input_tensor_spec: A tuple of (observation, action) each a nest of
+        `tensor_spec.TensorSpec` representing the inputs.
+      joint_fc_layer_params: Optional list of fully connected parameters after
+        merging observations and actions, where each item is the number of units
+        in the layer.
+      joint_dropout_layer_params: Optional list of dropout layer parameters,
+        each item is the fraction of input units to drop or a dictionary of
+        parameters according to the keras.Dropout documentation. The additional
+        parameter `permanent', if set to True, allows to apply dropout at
+        inference for approximated Bayesian inference. The dropout layers are
+        interleaved with the fully connected layers; there is a dropout layer
+        after each fully connected layer, except if the entry in the list is
+        None. This list must have the same length of joint_fc_layer_params, or
+        be None.
+      kernel_initializer: Initializer to use for the kernels of the conv and
+        dense layers. If none is provided a default glorot_uniform
+      activation_fn: Activation function, e.g. tf.nn.relu, slim.leaky_relu, ...
+      name: A string representing name of the network.
+
+    Raises:
+      ValueError: If `observation_spec` or `action_spec` contains more than one
+        observation.
+    """
+    assert len(input_tensor_spec) == 3, 'input_tensor_spec should contain obs, ac, and alpha specs'
+    observation_spec, action_spec, alpha_spec = input_tensor_spec
+
+    preprocessing_layers = (tf.keras.layers.Dense(preprocessing_layer_size),
+                            tf.keras.layers.Dense(preprocessing_layer_size),
+                            tf.keras.layers.Lambda(lambda x: x))
+    preprocessing_combiner = tf.keras.layers.Concatenate(axis=-1)
+
+    flat_action_spec = tf.nest.flatten(action_spec)
+    if len(flat_action_spec) > 1:
+      raise ValueError('Only a single action is supported by this network')
+    self._single_action_spec = flat_action_spec[0]
+    output_spec = tensor_spec.TensorSpec(shape=(), name='Z')
+
+    super(DistributionalCriticNetwork, self).__init__(
+        input_tensor_spec=input_tensor_spec, output_spec=output_spec, state_spec=(), name=name)
+
+    self._encoder = encoding_network.EncodingNetwork(
+        input_tensor_spec,
+        preprocessing_layers=preprocessing_layers,
+        preprocessing_combiner=preprocessing_combiner,
+        fc_layer_params=joint_fc_layer_params,
+        dropout_layer_params=joint_dropout_layer_params,
+        activation_fn=activation_fn,
+        kernel_initializer=kernel_initializer,
+        batch_squash=False)
+    self._projection_network = _critic_normal_projection_net(output_spec)
+
+
+  def call(self, observations, step_type, network_state=()):
+    state, network_state = self._encoder(
+        observations, step_type=step_type, network_state=network_state)
+    q_val = self._var_layer(state)
+    return tf.reshape(q_val, [-1]), network_state
+
+
+@gin.configurable
+class WcpgActorNetwork(actor_distribution_network.ActorDistributionNetwork):
+  def __init__(self,
+               input_tensor_spec,
+               output_tensor_spec,
+               preprocessing_layers=None,
+               preprocessing_combiner=tf.keras.layers.Concatenate(axis=-1),
+               fc_layer_params=(200, 100),
+               dropout_layer_params=None,
+               activation_fn=tf.keras.activations.relu,
+               kernel_initializer=None,
+               batch_squash=True,
+               dtype=tf.float32,
+               name='WcpgActorDistributionNetwork'):
+    observation_spec, action_spec, alpha_spec = input_tensor_spec
+    super(WcpgActorNetwork, self).__init(
+        input_tensor_spec, output_tensor_spec, preprocessing_layers, preprocessing_combiner,
+        fc_layer_params=fc_layer_params, dropout_layer_params=dropout_layer_params,
+        activation_fn=activation_fn, kernel_initializer=kernel_initializer,
+        batch_squash=batch_squash, dtype=dtype, continuous_projection_net=_critic_normal_projection_net,
+        name=name)
+
+
+
 @gin.configurable
 class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
   """Returns safe actions by rejection sampling with increasing variance."""
@@ -331,12 +444,41 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
         safe_idx = tf.argmin(fail_prob_safe)[0]
     ac = sampled_ac[safe_idx]
     assert ac.shape.as_list()[0] == 1, 'action shape is not correct: {}'.format(ac.shape.as_list())
-    return sampled_ac[safe_idx], policy_state
+    return ac, policy_state
+
+
+WcpgPolicyInfo = collections.namedtuple('WcpgPolicyInfo', ('alpha',))
+
+@gin.configurable
+class WcpgPolicy(actor_policy.ActorPolicy):
+  """A policy that awares safety."""
+
+  def __init__(self, alpha_spec, alpha=None, alpha_sampler=None, *args, **kwargs):
+    super(SafetyBoltzmannPolicy, self).__init__(*args, **kwargs)
+    info_spec = WcpgPolicyInfo(alpha=alpha_spec)
+    self._info_spec = info_spec
+    self._alpha = alpha
+    self._alpha_sampler = alpha_sampler or np.random.sample
+    self._setup_specs()  # run again to make sure specs are correctly updated
+
+  @property
+  def alpha(self):
+    if self._alpha is None:
+      self.resample_alpha()
+    return self._alpha
+
+  def resample_alpha(self):
+    self._alpha = self._alpha_sampler()
+
+  def _distribution(self, time_step, policy_state):
+    distribution_step = super(WcpgPolicy, self)._distribution(time_step, policy_state)
+    distribution_step = distribution_step._replace(
+        info=WcpgPolicyInfo(alpha=self.alpha))
+    return distribution_step
 
 
 BoltzmannPolicyInfo = collections.namedtuple('BoltzmannPolicyInfo',
                                              ('temperature',))
-
 
 @gin.configurable
 class SafetyBoltzmannPolicy(boltzmann_policy.BoltzmannPolicy):

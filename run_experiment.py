@@ -1,11 +1,11 @@
+import tensorflow as tf
+tf.compat.v1.enable_v2_behavior()
 import wandb
 import gin
 import trainer
 import os
 import os.path as osp
-import tensorflow as tf
 import numpy as np
-tf.compat.v1.enable_v2_behavior()
 
 from absl import flags
 from absl import app
@@ -13,8 +13,8 @@ from absl import app
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string('root_dir', '~/tfagents/safe-sac-sweeps/pddm_cube', 'Root directory for writing logs/summaries/checkpoints.')
-flags.DEFINE_string('env_str', 'pddm_cube-v0', 'Environment string')
+flags.DEFINE_string('root_dir', 'safe-sac-sweeps/cube_rotate/', 'Root directory for writing logs/summaries/checkpoints.')
+flags.DEFINE_string('env_str', 'SafemrlCube-v0', 'Environment string')
 flags.DEFINE_integer('num_steps', 2000000, 'Number of training steps')
 flags.DEFINE_integer('layer_size', 256, 'Number of training steps')
 flags.DEFINE_integer('batch_size', 256, 'batch size used for training')
@@ -31,7 +31,7 @@ flags.DEFINE_integer('initial_collect_steps', 10000, 'Number of steps to collect
 flags.DEFINE_float('initial_log_alpha', 0., 'Initial value for log_alpha')
 flags.DEFINE_float('gamma', 0.99, 'Future reward discount factor')
 flags.DEFINE_float('reward_scale_factor', 1.0, 'Reward scale factor for SacAgent')
-flags.DEFINE_multi_string('gin_files', ['pddm_cube.gin', 'sac_safe_online.gin'],
+flags.DEFINE_multi_string('gin_files', ['cube_default.gin', 'sac_safe_online.gin'],
                           'gin files to load')
 flags.DEFINE_boolean('eager_debug', False, 'Debug in eager mode if True')
 flags.DEFINE_integer('seed', None, 'Seed to seed envs and algorithm with')
@@ -71,7 +71,7 @@ def gin_bindings_from_config(config):
     gin_bindings.append('cr_opt/tf.keras.optimizers.Adam.learning_rate = {}'.format(config.critic_lr))
     gin_bindings.append('al_opt/tf.keras.optimizers.Adam.learning_rate = {}'.format(config.entropy_lr))
 
-  gin_bindings.append("init_collect/dynamic_step_driver.DynamicStepDriver.num_steps = {}".format(
+  gin_bindings.append("INITIAL_NUM_STEPS = {}".format(
     config.initial_collect_steps))
   gin_bindings.append('ENV_STR = "{}"'.format(config.env_str))
   gin_bindings.append('NUM_STEPS = {}'.format(config.num_steps))
@@ -89,12 +89,17 @@ def main(_):
   if os.environ.get('CONFIG_DIR'):
     gin.add_config_file_search_path(os.environ.get('CONFIG_DIR'))
   config = wandb.config
-  if not wandb.run.resumed:  # do not make changes  
-    config.update(dict(root_dir=osp.join(config.root_dir, str(os.environ.get('WANDB_RUN_ID', 0)))), allow_val_change=True)
+  if not wandb.run.resumed:  # do not make changes
+    root_path = []
+    if os.environ.get('EXP_DIR'):
+      root_path.append(os.environ.get('EXP_DIR'))
+    root_path.append(config.root_dir)
+    root_path.append(str(os.environ.get('WANDB_RUN_ID', 0)))
+    config.update(dict(root_dir=osp.join(*root_path)), allow_val_change=True)
   gin_files = config.gin_files
   gin_bindings = gin_bindings_from_config(config)
   gin.parse_config_files_and_bindings(gin_files, gin_bindings)
-  tf.config.threading.set_inter_op_parallelism_threads(12)
+  # tf.config.threading.set_inter_op_parallelism_threads(12)
   trainer.train_eval(config.root_dir, batch_size=config.batch_size, seed=FLAGS.seed,
                      train_metrics_callback=wandb.log, eager_debug=FLAGS.eager_debug)
 

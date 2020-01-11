@@ -1,4 +1,5 @@
 import gin
+import gym
 import tensorflow as tf
 
 from gym.wrappers import monitor
@@ -8,3 +9,4 @@ gin.external_configurable(tf_py_metric.TFPyMetric,
                           module='tf_agents.metrics.tf_py_metric')
 gin.external_configurable(monitor.Monitor, module='gym.wrappers.monitor')
 gin.external_configurable(tf.keras.layers.Concatenate, module='tf.keras.layers')
+gin.external_configurable(gym.wrappers.FlattenObservation, module='gym.wrappers')

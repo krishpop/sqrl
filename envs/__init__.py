@@ -19,6 +19,7 @@ from __future__ import absolute_import
 
 import gym
 from safemrl.envs import minitaur
+from safemrl.envs import cube_env
 from safemrl.envs import env_randomizers
 from pybullet_envs.minitaur.envs.env_randomizers import minitaur_terrain_randomizer
 from pybullet_envs.minitaur.envs.env_randomizers import minitaur_env_randomizer_from_config
@@ -30,7 +31,8 @@ if not registered:
   register(
     id="MinitaurGoalVelocityEnv-v0",
     entry_point=minitaur.MinitaurGoalVelocityEnv,
-    max_episode_steps=500
+    max_episode_steps=500,
+    kwargs={'max_steps': 500}  # TODO: environment also takes max_steps as arg
   )
 
   randomizers = []
@@ -39,7 +41,7 @@ if not registered:
     id="MinitaurRandFrictionGoalVelocityEnv-v0",
     entry_point=minitaur.MinitaurGoalVelocityEnv,
     max_episode_steps=500,
-    kwargs={'env_randomizer': randomizers}
+    kwargs={'env_randomizer': randomizers, 'max_steps': 500}
   )
 
   randomizers = []
@@ -48,7 +50,7 @@ if not registered:
     id="MinitaurRandFrictionGoalVelocityEnv-v1",
     entry_point=minitaur.MinitaurGoalVelocityEnv,
     max_episode_steps=500,
-    kwargs={'env_randomizer': randomizers}
+    kwargs={'env_randomizer': randomizers, 'max_steps': 500}
   )
 
   randomizers = []
@@ -57,6 +59,20 @@ if not registered:
     id="MinitaurRandTerrainGoalVelocityEnv-v0",
     entry_point=minitaur.MinitaurGoalVelocityEnv,
     max_episode_steps=500,
-    kwargs={'env_randomizer': randomizers}
+    kwargs={'env_randomizer': randomizers, 'max_steps': 500}
+  )
+
+  register(
+    id="SafemrlCube-v0",
+    entry_point=cube_env.SafemrlCubeEnv,
+    max_episode_steps=500,
+    kwargs=dict(max_steps=500,same_goals=True)
+  )
+
+  register(
+    id="SafemrlCube-v1",
+    entry_point=cube_env.SafemrlCubeEnv,
+    max_episode_steps=500,
+    kwargs=dict(max_steps=500,same_goals=False)
   )
 
