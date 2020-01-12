@@ -26,4 +26,4 @@ agents.CriticNetwork.preprocessing_combiner = (
     @misc.extract_obs_merge_w_ac_layer()
 )
 
-suite_gym.load.gym_env_wrappers = (@gym.wrappers.FlattenObservation, @highway_env.ContAcWrapper, @highway_env.TaskAgnWrapper)
+suite_gym.load.gym_env_wrappers = (@gym.wrappers.FlattenObservation, @highway.ContAcWrapper, @highway.TaskAgnWrapper)

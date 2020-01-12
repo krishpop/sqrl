@@ -44,7 +44,7 @@ from tf_agents.utils import common
 from safemrl.algos import agents
 from safemrl.algos import safe_sac_agent
 from safemrl.algos import ensemble_sac_agent
-from safemrl.algos import wcpg_agent
+#from safemrl.algos import wcpg_agent
 from safemrl.utils import safe_dynamic_episode_driver
 from safemrl.utils import misc
 from safemrl.utils import metrics
@@ -58,7 +58,7 @@ except ImportError:
 MAX_LOSS = 1e9
 
 SAFETY_ENVS = ['IndianWell', 'IndianWell2', 'IndianWell3', 'DrunkSpider', 'pddm_cube',
-               'SafemrlCube',
+               'SafemrlCube', 'highway',
                'DrunkSpiderShort', 'MinitaurGoalVelocityEnv', 'MinitaurRandFrictionGoalVelocityEnv']
 SAFETY_AGENTS = [safe_sac_agent.SafeSacAgent, safe_sac_agent.SafeSacAgentOnline]
 
@@ -102,7 +102,8 @@ def train_eval(
     batch_size=256,
     # Params for eval
     run_eval=False,
-    num_eval_episodes=30,
+    num_eval_episodes=1,
+    max_episode_len=500,
     eval_interval=10000,
     eval_metrics_callback=None,
     # Params for summaries and logging
@@ -177,7 +178,7 @@ def train_eval(
     logging.debug('obs spec: %s', observation_spec)
     logging.debug('action spec: %s', action_spec)
 
-    if agent_class is not wcpg_agent.WcpgAgent:
+    if agent_class: #is not wcpg_agent.WcpgAgent:
       actor_net = actor_distribution_network.ActorDistributionNetwork(
         observation_spec,
         action_spec,
@@ -253,7 +254,7 @@ def train_eval(
     agent_observers = [replay_buffer.add_batch]
     if online_critic:
       online_replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
-          collect_data_spec, batch_size=1, max_length=500*num_eval_episodes)
+          collect_data_spec, batch_size=1, max_length=max_episode_len*num_eval_episodes)
       agent_observers.append(online_replay_buffer.add_batch)
 
       online_rb_ckpt_dir = os.path.join(train_dir, 'online_replay_buffer')
@@ -380,12 +381,13 @@ def train_eval(
       online_dataset = online_replay_buffer.as_dataset(
           num_parallel_calls=3, sample_batch_size=batch_size, num_steps=2).prefetch(3)
       online_iterator = iter(online_dataset)
-      critic_metrics = [tf.keras.metrics.AUC(name='safety_critic_auc'),
-                        tf.keras.metrics.TruePositives(name='safety_critic_tp'),
-                        tf.keras.metrics.FalsePositives(name='safety_critic_fp'),
-                        tf.keras.metrics.TrueNegatives(name='safety_critic_tn'),
-                        tf.keras.metrics.FalseNegatives(name='safety_critic_fn'),
-                        tf.keras.metrics.BinaryAccuracy(name='safety_critic_acc')]
+      critic_metrics = [tf.keras.metrics.AUC(name='safety_critic_auc')]
+#                        tf.keras.metrics.TruePositives(name='safety_critic_tp'),
+#                        tf.keras.metrics.FalsePositives(name='safety_critic_fp'),
+#                        tf.keras.metrics.TrueNegatives(name='safety_critic_tn'),
+#                        tf.keras.metrics.FalseNegatives(name='safety_critic_fn'),
+#                        tf.keras.metrics.BinaryAccuracy(name='safety_critic_acc')]
+      
 
       @common.function
       def critic_train_step():
@@ -500,7 +502,7 @@ def train_eval(
         train_results.append((train_metric.name, train_metric.result().numpy()))
       if online_critic:
         for critic_metric in critic_metrics:
-          train_results.append(critic_metric.name, critic_metric.result().numpy())
+          train_results.append((critic_metric.name, critic_metric.result().numpy()))
           critic_metric.reset_states()
 
 

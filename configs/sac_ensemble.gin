@@ -16,6 +16,7 @@ trainer.train_eval.ensemble = True
 trainer.train_eval.n_critics = 3
 trainer.train_eval.num_iterations = %NUM_STEPS
 trainer.train_eval.debug_summaries = True
+trainer.train_eval.max_episode_len = %EP_LEN
 
 trainer.train_eval.actor_learning_rate = 5e-5
 trainer.train_eval.critic_learning_rate = 1e-4

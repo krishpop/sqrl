@@ -26,12 +26,14 @@ trainer.train_eval.eval_metrics = %EVAL_METRICS
 trainer.train_eval.num_global_steps = %NUM_STEPS
 trainer.train_eval.online_critic = False
 trainer.train_eval.keep_rb_checkpoint = False
+trainer.train_eval.max_episode_len = %EP_LEN
 trainer.train_eval.debug_summaries = True
 
 trainer.train_eval.initial_collect_driver_class = @init_collect/dynamic_step_driver.DynamicStepDriver
 init_collect/dynamic_step_driver.DynamicStepDriver.num_steps = %INITIAL_NUM_STEPS
 trainer.train_eval.collect_driver_class = @collect_driver/dynamic_step_driver.DynamicStepDriver
 collect_driver/dynamic_step_driver.DynamicStepDriver.num_steps = 1
+trainer.train_eval.num_eval_episodes = %NUM_EVAL
 
 agents.normal_projection_net.scale_distribution = True
 

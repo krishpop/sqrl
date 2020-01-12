@@ -32,6 +32,7 @@ trainer.train_eval.keep_rb_checkpoint = True
 trainer.train_eval.train_metrics = %TRAIN_METRICS
 trainer.train_eval.eval_metrics = %EVAL_METRICS
 trainer.train_eval.num_global_steps = %NUM_STEPS
+trainer.train_eval.max_episode_len = %EP_LEN
 metrics.AverageEarlyFailureMetric.buffer_size = %NUM_EVAL
 
 metrics.AverageEarlyFailureMetric.batch_size = 1
