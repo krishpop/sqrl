@@ -84,6 +84,7 @@ class SafeSacAgent(sac_agent.SacAgent):
                debug_summaries=False,
                summarize_grads_and_vars=False,
                train_step_counter=None,
+               critic_metrics=[],
                name=None):
 
     super(SafeSacAgent,
@@ -103,6 +104,7 @@ class SafeSacAgent(sac_agent.SacAgent):
     else:
       self._safety_critic_network = common.maybe_copy_target_network_with_checks(
           critic_network, None, 'SafetyCriticNetwork')
+    self._critic_metrics = critic_metrics
     self._safety_critic_optimizer = safety_critic_optimizer
     self._safe_td_errors_loss_fn = safe_td_errors_loss_fn
 
@@ -120,7 +122,8 @@ class SafeSacAgent(sac_agent.SacAgent):
         self._target_critic_network_2.variables,
         tau=1.0)
 
-  def _train_safety_critic(self, experience, weights):
+  def train_sc(self, experience, safe_rew, weights=None, metrics=None):
+    metrics = metrics or self._critic_metrics
     time_steps, actions, next_time_steps = (
         self._experience_to_transitions(experience))
 
@@ -134,8 +137,9 @@ class SafeSacAgent(sac_agent.SacAgent):
           time_steps,
           actions,
           next_time_steps,
-          safety_rewards=next_time_steps.observation['task_agn_rew'],
-          weights=weights)
+          safety_rewards=safe_rew,
+          weights=weights,
+          metrics=metrics)
 
       tf.debugging.check_numerics(safety_critic_loss, 'Critic loss is inf or '
                                   'nan.')
@@ -145,7 +149,6 @@ class SafeSacAgent(sac_agent.SacAgent):
                             self._safety_critic_optimizer)
     return safety_critic_loss
 
-  @common.function
   def _experience_to_transitions(self, experience):
     outer_shape = nest_utils.get_outer_shape(experience, self.collect_data_spec)
     boundary_mask = nest_utils.where(
@@ -236,7 +239,8 @@ class SafeSacAgent(sac_agent.SacAgent):
     self._apply_gradients(alpha_grads, alpha_variable, self._alpha_optimizer)
 
     if self._safety_critic_network is not None:
-      safety_critic_loss = self._train_safety_critic(experience, weights)
+      safety_critic_loss = self.train_sc(experience, experience.observation['task_agn_rew'],
+                                         weights)
 
     with tf.name_scope('Losses'):
       tf.compat.v2.summary.scalar(
@@ -328,6 +332,7 @@ class SafeSacAgent(sac_agent.SacAgent):
                          actions,
                          next_time_steps,
                          safety_rewards,
+                         metrics=[],
                          weights=None):
     """Computes the critic loss for SAC training.
 
@@ -369,6 +374,15 @@ class SafeSacAgent(sac_agent.SacAgent):
 
       # Take the mean across the batch.
       safety_critic_loss = tf.reduce_mean(input_tensor=safety_critic_loss)
+
+      if metrics:
+        for metric in metrics:
+          if isinstance(metric, tf.keras.metrics.AUC):
+            metric.update_state(safety_rewards, pred_td_targets)
+          else:
+            rew_pred = tf.greater_equal(pred_td_targets,
+                                        self._target_safety)
+            metric.update_state(safety_rewards, rew_pred)
 
       if self._debug_summaries:
         pred_td_targets = tf.nn.sigmoid(pred_td_targets)
@@ -666,7 +680,6 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
           (time_steps, actions, next_time_steps))
     return time_steps, actions, next_time_steps  #, policy_steps.info
 
-  @common.function
   def train_sc(self, experience, safe_rew, weights=None, metrics=None):
     """Returns a train op to update the agent's networks.
 

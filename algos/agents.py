@@ -26,8 +26,11 @@ from __future__ import print_function
 import collections
 
 import gin
+import time
 import numpy as np
 import tensorflow as tf
+
+from absl import logging
 from tf_agents.agents.sac import sac_agent
 from tf_agents.networks import encoding_network
 from tf_agents.networks import network
@@ -412,10 +415,12 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
     safe_ac_idx = tf.where(safe_ac_mask)
 
     resample_count = 0
+    start_time = time.time()
     while self._training and resample_count < 4 and not safe_ac_idx.shape.as_list()[0]:
       if self._resample_counter is not None:
         self._resample_counter()
       resample_count += 1
+      logging.debug('resample actions!')
       if isinstance(actions, dist_utils.SquashToSpecNormal):
         scale = actions.input_distribution.scale * 1.5  # increase variance by constant 1.5
         ac_mean = actions.mean()
@@ -431,7 +436,7 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
 
       fail_prob = tf.nn.sigmoid(q_val)
       safe_ac_idx = tf.where(fail_prob < self._safety_threshold)
-
+    logging.debug('resampled {} times, {} seconds'.format(resample_count, time.time() - start_time))
     sampled_ac = ac_batch_squash.unflatten(sampled_ac)
     if None in safe_ac_idx.shape.as_list() or not np.prod(safe_ac_idx.shape.as_list()):  # return safest action
       safe_idx = tf.argmin(fail_prob)

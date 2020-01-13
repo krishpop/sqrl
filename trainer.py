@@ -336,7 +336,7 @@ def train_eval(
       config_saver = gin.tf.GinConfigSaverHook(train_dir, summarize_config=True)
       tf.function(config_saver.after_create_session)()
 
-    if agent_class not in SAFETY_AGENTS:
+    if agent_class == sac_agent.SacAgent:
       collect_driver.run = common.function(collect_driver.run)
     if eager_debug:
       tf.config.experimental_run_functions_eagerly(True)
@@ -388,10 +388,10 @@ def train_eval(
 #                        tf.keras.metrics.FalseNegatives(name='safety_critic_fn'),
 #                        tf.keras.metrics.BinaryAccuracy(name='safety_critic_acc')]
       
-
       @common.function
       def critic_train_step():
         """Builds critic training step."""
+        start_time = time.time()
         experience, buf_info = next(online_iterator)
         if env_name.split('-')[0] in SAFETY_ENVS:
           safe_rew = experience.observation['task_agn_rew'][:, 1]
@@ -400,6 +400,7 @@ def train_eval(
               online_replay_buffer, as_tensor=True)
           safe_rew = tf.gather(safe_rew, tf.squeeze(buf_info.ids), axis=1)
         ret = tf_agent.train_sc(experience, safe_rew, metrics=critic_metrics, weights=None)
+        logging.debug('critic train step: {} sec'.format(time.time() - start_time))
         return ret
 
     @common.function
@@ -416,6 +417,7 @@ def train_eval(
     loss_divergence_counter = 0
     mean_train_loss = tf.keras.metrics.Mean(name='mean_train_loss')
     if online_critic:
+      logging.debug('starting safety critic pretraining')
       safety_eps = tf_agent._safe_policy._safety_threshold
       tf_agent._safe_policy._safety_threshold = 0.6
       resample_counter = online_collect_policy._resample_counter
@@ -425,6 +427,7 @@ def train_eval(
           sc_loss, lambda_loss = critic_train_step()  # pylint: disable=unused-variable
       tf_agent._safe_policy._safety_threshold = safety_eps
 
+    logging.debug('starting policy pretraining')
     while (global_step.numpy() <= num_global_steps and
            not early_termination_fn()):
       # Collect and train.
@@ -436,15 +439,17 @@ def train_eval(
         if time_step is None or time_step.is_last():
           resample_ac_freq = mean_resample_ac.result()
           mean_resample_ac.reset_states()
-
       time_step, policy_state = collect_driver.run(
           time_step=time_step,
           policy_state=policy_state,
       )
+      logging.debug('policy eval: {} sec'.format(time.time() - start_time))
 
+      train_time = time.time()
       for _ in range(train_steps_per_iteration):
         train_loss = train_step()
         mean_train_loss(train_loss.loss)
+      logging.debug('train policy: {} sec'.format(time.time() - train_time))
 
       if online_critic and global_step.numpy() % train_sc_interval == 0:
           batch_time_step = sc_tf_env.reset()
@@ -536,6 +541,7 @@ def train_eval(
         if eval_metrics_callback is not None:
           eval_metrics_callback(results, global_step.numpy())
         metric_utils.log_metrics(eval_metrics)
+      logging.debug('iteration time: {} sec'.format(time.time() - start_time))
 
   if not keep_rb_checkpoint:
     misc.cleanup_checkpoints(rb_ckpt_dir)
