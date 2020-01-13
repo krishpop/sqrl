@@ -27,6 +27,7 @@ AGENT_CLASS = @safe_sac_agent.SafeSacAgentOnline
 
 trainer.train_eval.env_name = %ENV_STR
 trainer.train_eval.env_load_fn = %ENV_LOAD_FN
+trainer.train_eval.eval_env_load_fn = %EVAL_ENV_LOAD_FN
 trainer.train_eval.agent_class = %AGENT_CLASS
 trainer.train_eval.online_critic = True
 trainer.train_eval.keep_rb_checkpoint = True

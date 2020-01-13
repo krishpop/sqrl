@@ -31,7 +31,9 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 import gin
 import numpy as np
+import functools
 
+from gym.wrappers import Monitor
 from scipy.signal import butter, lfilter
 from tf_agents.utils import common
 
@@ -205,3 +207,9 @@ def merge_obs_w_ac_layer():
 @gin.configurable
 def extract_observation_layer():
   return tf.keras.layers.Lambda(lambda obs: obs['observation'])
+
+
+@gin.configurable
+def monitor_freq(freq=100, vid_dir='./videos'):
+  return functools.partial(Monitor, video_callable=lambda x: (x%freq) == 0,
+                           directory=vid_dir)

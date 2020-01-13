@@ -27,6 +27,7 @@ INITIAL_NUM_STEPS = %EP_LEN
 
 trainer.train_eval.env_name = %ENV_STR
 trainer.train_eval.env_load_fn = %ENV_LOAD_FN
+trainer.train_eval.eval_env_load_fn = %EVAL_ENV_LOAD_FN
 trainer.train_eval.agent_class = @safe_sac_agent.SafeSacAgent
 trainer.train_eval.keep_rb_checkpoint = True
 trainer.train_eval.train_metrics = %TRAIN_METRICS

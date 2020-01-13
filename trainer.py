@@ -28,6 +28,7 @@ from absl import logging
 
 import gin
 import tensorflow as tf
+from tf_agents.agents.sac import sac_agent
 from tf_agents.drivers import dynamic_episode_driver
 from tf_agents.environments import tf_py_environment
 from tf_agents.environments import parallel_py_environment
@@ -73,6 +74,7 @@ def train_eval(
     root_dir,
     load_root_dir=None,
     env_load_fn=None,
+    eval_env_load_fn=None,
     env_name=None,
     agent_class=None,
     initial_collect_driver_class=None,
@@ -143,7 +145,7 @@ def train_eval(
     ] + [tf_py_metric.TFPyMetric(m) for m in sc_metrics]
     sc_tf_env = tf_py_environment.TFPyEnvironment(
       parallel_py_environment.ParallelPyEnvironment(
-        [lambda: env_load_fn(env_name)] * n_envs
+        [lambda: eval_env_load_fn(env_name)] * n_envs
       ))
     if seed:
       sc_tf_env.seed([seed + i for i in range(n_envs)])
@@ -158,7 +160,7 @@ def train_eval(
     ] + [tf_py_metric.TFPyMetric(m) for m in eval_metrics]
     eval_tf_env = tf_py_environment.TFPyEnvironment(
       parallel_py_environment.ParallelPyEnvironment(
-        [lambda: env_load_fn(env_name)] * n_envs
+        [lambda: eval_env_load_fn(env_name)] * n_envs
       ))
     if seed:
       eval_tf_env.seed([seed + n_envs + i for i in range(n_envs)])

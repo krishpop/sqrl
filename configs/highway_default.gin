@@ -9,6 +9,30 @@ import tf_agents.networks.actor_distribution_network
 
 ENV_STR = 'highway-v0'
 ENV_LOAD_FN = @suite_gym.load
+EVAL_ENV_LOAD_FN = @suite_gym.load
+ENV_LOAD_FN_MONITOR = @env_loader/suite_gym.load
+EVAL_ENV_LOAD_FN_MONITOR = @eval_env_loader/suite_gym.load
+TRAIN_MONITOR_FREQ = 100
+EVAL_MONITOR_FREQ = 10
+VID_DIR = './rollouts'
+EVAL_VID_DIR = './eval_rollouts'
+
+suite_gym.load.gym_env_wrappers = (@gym.wrappers.FlattenObservation, @highway.ContAcWrapper,
+                                   @highway.TaskAgnWrapper)
+env_loader/suite_gym.load.gym_env_wrappers =  (@gym.wrappers.FlattenObservation,
+                                               @highway.ContAcWrapper,
+                                               @highway.TaskAgnWrapper,
+                                               @train_monitor/misc.monitor_freq())
+train_monitor/misc.monitor_freq.freq = %TRAIN_MONITOR_FREQ
+train_monitor/misc.monitor_freq.vid_dir = %VID_DIR
+
+eval_env_loader/suite_gym.load.gym_env_wrappers =  (@gym.wrappers.FlattenObservation,
+                                                    @highway.ContAcWrapper,
+                                                    @highway.TaskAgnWrapper,
+                                                    @eval_monitor/misc.monitor_freq())
+eval_monitor/misc.monitor_freq.freq = %EVAL_MONITOR_FREQ
+eval_monitor/misc.monitor_freq.vid_dir = %EVAL_VID_DIR
+
 EP_LEN = 40
 TRAIN_METRICS = [
     @metrics.AverageEarlyFailureMetric()
@@ -25,5 +49,3 @@ actor_distribution_network.ActorDistributionNetwork.preprocessing_combiner = (
 agents.CriticNetwork.preprocessing_combiner = (
     @misc.extract_obs_merge_w_ac_layer()
 )
-
-suite_gym.load.gym_env_wrappers = (@gym.wrappers.FlattenObservation, @highway.ContAcWrapper, @highway.TaskAgnWrapper)

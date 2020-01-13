@@ -4,10 +4,31 @@ import safemrl.algos.agents
 import safemrl.envs.cube_env
 import safemrl.utils.misc
 import tf_agents.environments.suite_mujoco
+import tf_agents.environments.suite_gym
 import tf_agents.networks.actor_distribution_network
 
 ENV_STR = 'SafemrlCube-v0'
+
 ENV_LOAD_FN = @suite_mujoco.load
+EVAL_ENV_LOAD_FN = @suite_mujoco.load
+ENV_LOAD_FN_MONITOR = @env_loader/suite_mujoco.load
+EVAL_ENV_LOAD_FN_MONITOR = @eval_env_loader/suite_mujoco.load
+TRAIN_MONITOR_FREQ = 100
+EVAL_MONITOR_FREQ = 10
+VID_DIR = './rollouts'
+EVAL_VID_DIR = './eval_rollouts'
+
+suite_mujoco.load.gym_env_wrappers = (@cube_env.CubeTaskAgnWrapper,)
+env_loader/suite_mujoco.load.gym_env_wrappers =  (@cube_env.CubeTaskAgnWrapper,
+                                                  @train_monitor/misc.monitor_freq())
+train_monitor/misc.monitor_freq.freq = %TRAIN_MONITOR_FREQ
+train_monitor/misc.monitor_freq.vid_dir = %VID_DIR
+
+eval_env_loader/suite_mujoco.load.gym_env_wrappers =  (@cube_env.CubeTaskAgnWrapper,
+                                                       @eval_monitor/misc.monitor_freq())
+eval_monitor/misc.monitor_freq.freq = %EVAL_MONITOR_FREQ
+eval_monitor/misc.monitor_freq.vid_dir = %EVAL_VID_DIR
+
 EP_LEN = 500
 TRAIN_METRICS = [
     @metrics.AverageEarlyFailureMetric()
@@ -24,6 +45,3 @@ actor_distribution_network.ActorDistributionNetwork.preprocessing_combiner = (
 agents.CriticNetwork.preprocessing_combiner = (
     @misc.extract_obs_merge_w_ac_layer()
 )
-
-suite_mujoco.load.gym_env_wrappers = (@cube_env.CubeTaskAgnWrapper,)
-
