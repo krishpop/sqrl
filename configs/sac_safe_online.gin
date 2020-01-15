@@ -27,13 +27,14 @@ AGENT_CLASS = @safe_sac_agent.SafeSacAgentOnline
 
 trainer.train_eval.env_name = %ENV_STR
 trainer.train_eval.env_load_fn = %ENV_LOAD_FN
-trainer.train_eval.eval_env_load_fn = %EVAL_ENV_LOAD_FN
+trainer.train_eval.gym_env_wrappers = %ENV_WRAPPERS
 trainer.train_eval.agent_class = %AGENT_CLASS
 trainer.train_eval.online_critic = True
 trainer.train_eval.keep_rb_checkpoint = True
 sac.sac_agent.SacAgent.debug_summaries = True
 trainer.train_eval.train_metrics = %TRAIN_METRICS
 trainer.train_eval.eval_metrics = %EVAL_METRICS
+trainer.train_eval.env_metric_factories = %ENV_METRIC_FACTORIES
 trainer.train_eval.num_global_steps = %NUM_STEPS
 trainer.train_eval.n_envs = %NUM_ENVS
 trainer.train_eval.num_eval_episodes = %NUM_EVAL

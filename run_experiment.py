@@ -18,8 +18,6 @@ flags.DEFINE_string('root_dir', 'safe-sac-sweeps/cube_rotate/', 'Root directory 
 flags.DEFINE_string('load_dir', None, 'Directory for loading pretrained policy.')
 flags.DEFINE_string('env_str', 'SafemrlCube-v0', 'Environment string')
 flags.DEFINE_boolean('monitor', False, 'load environments with Monitor wrapper')
-flags.DEFINE_integer('monitor_interval', 100, 'Monitor episode frequency')
-flags.DEFINE_integer('eval_monitor_interval', 10, 'Monitor episode frequency for eval')
 flags.DEFINE_integer('num_steps', int(1e6), 'Number of training steps')
 flags.DEFINE_integer('layer_size', 256, 'Number of training steps')
 flags.DEFINE_integer('batch_size', 256, 'batch size used for training')
@@ -37,6 +35,7 @@ flags.DEFINE_integer('initial_collect_steps', 5000, 'Number of steps to collect 
 flags.DEFINE_float('initial_log_alpha', 0., 'Initial value for log_alpha')
 flags.DEFINE_float('gamma', 0.99, 'Future reward discount factor')
 flags.DEFINE_float('reward_scale_factor', 1.0, 'Reward scale factor for SacAgent')
+flags.DEFINE_float('gradient_clipping', None, 'Gradient clipping factor for SacAgent')
 flags.DEFINE_multi_string('gin_files', ['cube_default.gin', 'sac_safe_online.gin'],
                           'gin files to load')
 flags.DEFINE_boolean('debug_summaries', False, 'Debug summaries for critic and actor')
@@ -59,6 +58,9 @@ def gin_bindings_from_config(config):
       '{}.target_entropy = {}'.format(agent_prefix, config.target_entropy))
   gin_bindings.append(
       '{}.reward_scale_factor = {}'.format(agent_prefix, config.reward_scale_factor))
+  if config.gradient_clipping:
+    gin_bindings.append(
+      '{}.gradient_clipping = {}'.format(agent_prefix, config.gradient_clipping))
   gin_bindings.append(
       '{}.target_update_tau = {}'.format(agent_prefix, config.target_update_tau))
   gin_bindings.append(
@@ -81,20 +83,12 @@ def gin_bindings_from_config(config):
     gin_bindings.append('cr_opt/tf.keras.optimizers.Adam.learning_rate = {}'.format(config.critic_lr))
     gin_bindings.append('al_opt/tf.keras.optimizers.Adam.learning_rate = {}'.format(config.entropy_lr))
 
+  gin_bindings.append('trainer.train_eval.debug_summaries = {}'.format(config.debug_summaries))
   gin_bindings.append("INITIAL_NUM_STEPS = {}".format(
     config.initial_collect_steps))
   gin_bindings.append('ENV_STR = "{}"'.format(config.env_str))
   gin_bindings.append('NUM_STEPS = {}'.format(config.num_steps))
   gin_bindings.append('LAYER_SIZE = {}'.format(config.layer_size))
-  if FLAGS.monitor:
-    vid_path = osp.join(config.root_dir, 'rollouts')
-    eval_vid_path = osp.join(config.root_dir, 'eval_rollouts')
-    gin_bindings.append('VID_DIR = "{}"'.format(vid_path))
-    gin_bindings.append('EVAL_VID_DIR = "{}"'.format(eval_vid_path))
-    gin_bindings.append('trainer.train_eval.env_load_fn = %ENV_LOAD_FN_MONITOR')
-    gin_bindings.append('trainer.train_eval.eval_env_load_fn = %EVAL_ENV_LOAD_FN_MONITOR')
-    gin_bindings.append('TRAIN_MONITOR_FREQ = {}'.format(config.monitor_interval))
-    gin_bindings.append('EVAL_MONITOR_FREQ = {}'.format(config.eval_monitor_intrval))
   return gin_bindings
 
 
@@ -124,7 +118,7 @@ def main(_):
   # tf.config.threading.set_inter_op_parallelism_threads(12)
   trainer.train_eval(config.root_dir, batch_size=config.batch_size, seed=FLAGS.seed,
                      train_metrics_callback=wandb.log, eager_debug=FLAGS.eager_debug,
-                     debug_summaries=FLAGS.debug_summaries)
+                     monitor=FLAGS.monitor)
 
 
 if __name__ == '__main__':

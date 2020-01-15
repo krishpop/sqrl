@@ -209,3 +209,45 @@ class MinitaurAverageMaxSpeedMetric(py_metrics.StreamingMetric):
     if len(is_last[0]) > 0:
       self.add_to_buffer(max_speed[is_last])
     max_speed[is_last] = 0
+
+
+@gin.configurable
+class CubeAverageScoreMetric(py_metrics.StreamingMetric):
+  """Computes average score at end of trajectory"""
+  def __init__(self, env, name='AverageScore', buffer_size=10, batch_size=None):
+    """
+    Creates an CubeAverageScoreMetric.
+    Args:
+      env: Instance of gym.Env that implements get_score() which updates the metric
+      name: metric name
+      buffer_size: number of episodes to compute average over
+    """
+
+    # Set a dummy value on self._np_state.obs_val so it gets included in
+    # the first checkpoint (before metric is first called).
+    self._env = env
+    batch_size = batch_size or len(env)
+    self._np_state = numpy_storage.NumpyState()
+    self._np_state.adds_to_buff = np.array(0, dtype=float)
+    # used so that buff is not over-populated by returned trajectories from short episodes
+    self._buff_add_limit = max(buffer_size/batch_size, 1)
+    super(CubeAverageScoreMetric, self).__init__(
+        name, buffer_size=buffer_size, batch_size=batch_size)
+
+  def _reset(self, batch_size):
+    self._np_state.adds_to_buff = np.zeros(batch_size)
+
+  def _batched_call(self, trajectory):
+    """Processes the trajectory to update the metric.
+
+    Args:
+      trajectory: a tf_agents.trajectory.Trajectory.
+    """
+
+    is_last = np.where(trajectory.is_last())
+
+    if len(is_last[0]) > 0:
+      for idx in is_last[0]:
+        if self._np_state.adds_to_buff[idx] < self._buff_add_limit:
+          self.add_to_buffer(self._env[idx].last_score)
+          self._np_state.adds_to_buff[idx] += 1

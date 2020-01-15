@@ -27,11 +27,12 @@ INITIAL_NUM_STEPS = %EP_LEN
 
 trainer.train_eval.env_name = %ENV_STR
 trainer.train_eval.env_load_fn = %ENV_LOAD_FN
-trainer.train_eval.eval_env_load_fn = %EVAL_ENV_LOAD_FN
+trainer.train_eval.gym_env_wrappers = %ENV_WRAPPERS
 trainer.train_eval.agent_class = @safe_sac_agent.SafeSacAgent
 trainer.train_eval.keep_rb_checkpoint = True
 trainer.train_eval.train_metrics = %TRAIN_METRICS
 trainer.train_eval.eval_metrics = %EVAL_METRICS
+trainer.train_eval.env_metric_factories = %ENV_METRIC_FACTORIES
 trainer.train_eval.num_global_steps = %NUM_STEPS
 trainer.train_eval.max_episode_len = %EP_LEN
 metrics.AverageEarlyFailureMetric.buffer_size = %NUM_EVAL

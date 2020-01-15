@@ -7,28 +7,7 @@ import tf_agents.networks.actor_distribution_network
 
 EP_LEN = 500
 ENV_STR = "MinitaurGoalVelocityEnv-v0"
-ENV_LOAD_FN = @suite_pybullet.load
-EVAL_ENV_LOAD_FN = @suite_pybullet.load
-ENV_LOAD_FN_MONITOR = @env_loader/suite_pybullet.load
-EVAL_ENV_LOAD_FN_MONITOR = @eval_env_loader/suite_pybullet.load
-TRAIN_MONITOR_FREQ = 100
-EVAL_MONITOR_FREQ = 10
-VID_DIR = './rollouts'
-EVAL_VID_DIR = './eval_rollouts'
-
-suite_pybullet.load.gym_env_wrappers = (@minitaur.TaskAgnWrapper, @minitaur.CurrentVelWrapper)
-env_loader/suite_pybullet.load.gym_env_wrappers =  (@minitaur.TaskAgnWrapper,
-                                                    @minitaur.CurrentVelWrapper,
-                                                    @train_monitor/misc.monitor_freq())
-train_monitor/misc.monitor_freq.freq = %TRAIN_MONITOR_FREQ
-train_monitor/misc.monitor_freq.vid_dir = %VID_DIR
-
-eval_env_loader/suite_pybullet.load.gym_env_wrappers =  (@minitaur.TaskAgnWrapper,
-                                                         @minitaur.CurrentVelWrapper,
-                                                         @eval_monitor/misc.monitor_freq())
-eval_monitor/misc.monitor_freq.freq = %EVAL_MONITOR_FREQ
-eval_monitor/misc.monitor_freq.vid_dir = %EVAL_VID_DIR
-
+ENV_WRAPPERS = [@minitaur.TaskAgnWrapper, @minitaur.CurrentVelWrapper]
 TRAIN_METRICS = [
     @safemrl.utils.metrics.AverageEarlyFailureMetric(),
     @safemrl.utils.metrics.MinitaurAverageSpeedMetric(),
@@ -42,6 +21,8 @@ EVAL_METRICS = [
     @safemrl.utils.metrics.MinitaurAverageSpeedMetric(),
     @safemrl.utils.metrics.MinitaurAverageMaxSpeedMetric()
 ]
+
+ENV_METRIC_FACTORIES = []
 # safemrl.utils.metrics.AverageEarlyFailureMetric.batch_size = %NUM_ENVS
 
 minitaur.MinitaurGoalVelocityEnv.max_steps = %EP_LEN

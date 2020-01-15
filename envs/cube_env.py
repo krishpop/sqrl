@@ -31,7 +31,7 @@ GOAL_TASKS = {
 class SafemrlCubeEnv(cube_env.CubeEnv):
 
     def __init__(self, same_goals=False, goal_task=('left', 'right', 'up', 'down'),
-                 max_steps=500):
+                 max_steps=100):
       #####################################
       #####################################
 
@@ -48,11 +48,17 @@ class SafemrlCubeEnv(cube_env.CubeEnv):
       self._same_goals = same_goals
       self._goal_options = [GOAL_TASKS[k] for k in goal_task]
       super(SafemrlCubeEnv, self).__init__()
+      self._last_score = self.get_score(self.unwrapped.obs_dict)
+
+    @property
+    def last_score(self):
+      return self._last_score
 
     def step(self, a):
       # removes everything but score from output info
       a = np.array(a).squeeze()
       o, r, d, i = super(SafemrlCubeEnv, self).step(a)
+      self._last_score = i['score']
       i = {'score': i['score']}
       return o, r, d, i
 

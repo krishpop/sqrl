@@ -11,13 +11,18 @@ import safemrl.algos.ensemble_sac_agent
 include "sac.gin"
 
 NUM_STEPS = 1000000
+AGENT_CLASS = @ensemble_sac_agent.EnsembleSacAgent
 
 trainer.train_eval.ensemble = True
 trainer.train_eval.n_critics = 3
-trainer.train_eval.num_iterations = %NUM_STEPS
 trainer.train_eval.debug_summaries = True
 trainer.train_eval.max_episode_len = %EP_LEN
 
-trainer.train_eval.actor_learning_rate = 5e-5
+
+ensemble_sac_agent.EnsembleSacAgent.actor_optimizer = @ac_opt/tf.keras.optimizers.Adam()
+ac_opt/tf.keras.optimizers.Adam.learning_rate = 5e-5
+sac_agent.SacAgent.critic_optimizer = @cr_opt/tf.keras.optimizers.Adam()
+cr_opt/tf.keras.optimizers.Adam.learning_rate = 1e-4
 trainer.train_eval.critic_learning_rate = 1e-4
-trainer.train_eval.alpha_learning_rate = 1e-4
+ensemble_sac_agent.EnsembleSacAgent.alpha_optimizer = @al_opt/tf.keras.optimizers.Adam()
+al_opt/tf.keras.optimizers.Adam.learning_rate = 1e-4

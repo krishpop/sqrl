@@ -27,11 +27,13 @@ import time
 from absl import logging
 
 import gin
+import gym
 import tensorflow as tf
 from tf_agents.agents.sac import sac_agent
 from tf_agents.drivers import dynamic_episode_driver
 from tf_agents.environments import tf_py_environment
 from tf_agents.environments import parallel_py_environment
+from tf_agents.environments import gym_wrapper
 from tf_agents.eval import metric_utils
 from tf_agents.metrics import tf_metrics
 from tf_agents.metrics import tf_py_metric
@@ -69,12 +71,13 @@ SAFETY_AGENTS = [safe_sac_agent.SafeSacAgent, safe_sac_agent.SafeSacAgentOnline]
 TERMINATE_AFTER_DIVERGED_LOSS_STEPS = 100
 
 
-@gin.configurable(blacklist=['seed', 'eager_debug', 'env_metric_factories'])
+@gin.configurable(blacklist=['seed', 'eager_debug', 'monitor'])
 def train_eval(
     root_dir,
     load_root_dir=None,
     env_load_fn=None,
-    eval_env_load_fn=None,
+    gym_env_wrappers=[],
+    monitor=False,
     env_name=None,
     agent_class=None,
     initial_collect_driver_class=None,
@@ -115,6 +118,7 @@ def train_eval(
     keep_rb_checkpoint=False,
     log_interval=1000,
     summary_interval=1000,
+    monitor_interval=1000,
     summaries_flush_secs=10,
     early_termination_fn=None,
     debug_summaries=False,
@@ -145,7 +149,7 @@ def train_eval(
     ] + [tf_py_metric.TFPyMetric(m) for m in sc_metrics]
     sc_tf_env = tf_py_environment.TFPyEnvironment(
       parallel_py_environment.ParallelPyEnvironment(
-        [lambda: eval_env_load_fn(env_name)] * n_envs
+        [lambda: env_load_fn(env_name, gym_env_wrappers=gym_env_wrappers)] * n_envs
       ))
     if seed:
       sc_tf_env.seed([seed + i for i in range(n_envs)])
@@ -160,17 +164,26 @@ def train_eval(
     ] + [tf_py_metric.TFPyMetric(m) for m in eval_metrics]
     eval_tf_env = tf_py_environment.TFPyEnvironment(
       parallel_py_environment.ParallelPyEnvironment(
-        [lambda: eval_env_load_fn(env_name)] * n_envs
+        [lambda: env_load_fn(env_name, gym_env_wrappers=gym_env_wrappers)] * n_envs
       ))
     if seed:
       eval_tf_env.seed([seed + n_envs + i for i in range(n_envs)])
 
+  if monitor:
+    vid_path = os.path.join(root_dir, 'rollouts')
+    monitor_env_wrapper = misc.monitor_freq(1, vid_path)
+    monitor_env = gym.make(env_name)
+    for wrapper in gym_env_wrappers:
+      monitor_env = wrapper(monitor_env)
+    monitor_env = monitor_env_wrapper(monitor_env)
+    # auto_reset must be False to ensure Monitor works correctly
+    monitor_py_env = gym_wrapper.GymWrapper(monitor_env, auto_reset=False)
+
   global_step = tf.compat.v1.train.get_or_create_global_step()
   with tf.compat.v2.summary.record_if(
       lambda: tf.math.equal(global_step % summary_interval, 0)):
-    tf_env = env_load_fn(env_name)
-    if not isinstance(tf_env, tf_py_environment.TFPyEnvironment):
-      tf_env = tf_py_environment.TFPyEnvironment(tf_env)
+    py_env = env_load_fn(env_name, gym_env_wrappers=gym_env_wrappers)
+    tf_env = tf_py_environment.TFPyEnvironment(py_env)
     if seed:
       tf_env.seed(seed + 2*n_envs + i for i in range(n_envs))
     time_step_spec = tf_env.time_step_spec()
@@ -338,7 +351,7 @@ def train_eval(
       config_saver = gin.tf.GinConfigSaverHook(train_dir, summarize_config=True)
       tf.function(config_saver.after_create_session)()
 
-    if agent_class == sac_agent.SacAgent:
+    if agent_class is sac_agent.SacAgent:
       collect_driver.run = common.function(collect_driver.run)
     if eager_debug:
       tf.config.experimental_run_functions_eagerly(True)
@@ -354,6 +367,15 @@ def train_eval(
       if online_critic:
         last_id = online_replay_buffer._get_last_id()  # pylint: disable=protected-access
         logging.debug('Data saved in online buffer after initial collection: %d steps', last_id)
+
+    if env_metric_factories:
+      for env_metric in env_metric_factories:
+        train_metrics.append(env_metric([py_env.gym]))
+        # TODO: get env factory with parallel py envs
+        # if run_eval:
+        #   eval_metrics.append(env_metric([env.gym for env in eval_tf_env.pyenv._envs]))
+        # if online_critic:
+        #   sc_metrics.append(env_metric([env.gym for env in sc_tf_env.pyenv._envs]))
 
     if run_eval:
       results = metric_utils.eager_compute(
@@ -418,6 +440,7 @@ def train_eval(
     # How many consecutive steps was loss diverged for.
     loss_divergence_counter = 0
     mean_train_loss = tf.keras.metrics.Mean(name='mean_train_loss')
+
     if online_critic:
       logging.debug('starting safety critic pretraining')
       safety_eps = tf_agent._safe_policy._safety_threshold
@@ -430,10 +453,10 @@ def train_eval(
       tf_agent._safe_policy._safety_threshold = safety_eps
 
     logging.debug('starting policy pretraining')
-    while (global_step.numpy() <= num_global_steps and
-           not early_termination_fn()):
+    while (global_step.numpy() <= num_global_steps and not early_termination_fn()):
       # Collect and train.
       start_time = time.time()
+      current_step = global_step.numpy()
 
       if online_critic:
         mean_resample_ac(resample_counter.result())
@@ -441,6 +464,7 @@ def train_eval(
         if time_step is None or time_step.is_last():
           resample_ac_freq = mean_resample_ac.result()
           mean_resample_ac.reset_states()
+
       time_step, policy_state = collect_driver.run(
           time_step=time_step,
           policy_state=policy_state,
@@ -451,9 +475,10 @@ def train_eval(
       for _ in range(train_steps_per_iteration):
         train_loss = train_step()
         mean_train_loss(train_loss.loss)
-      logging.debug('train policy: {} sec'.format(time.time() - train_time))
+      if current_step == 0:
+        logging.debug('train policy: {} sec'.format(time.time() - train_time))
 
-      if online_critic and global_step.numpy() % train_sc_interval == 0:
+      if online_critic and current_step % train_sc_interval == 0:
           batch_time_step = sc_tf_env.reset()
           batch_policy_state = online_collect_policy.get_initial_state(sc_tf_env.batch_size)
           online_driver.run(time_step=batch_time_step, policy_state=batch_policy_state)
@@ -486,7 +511,7 @@ def train_eval(
 
       time_acc += time.time() - start_time
 
-      if global_step.numpy() % log_interval == 0:
+      if current_step % log_interval == 0:
         logging.info('step = %d, loss = %f', global_step.numpy(), total_loss)
         steps_per_sec = (global_step.numpy() - timed_at_step) / time_acc
         logging.info('%.3f steps/sec', steps_per_sec)
@@ -511,8 +536,6 @@ def train_eval(
         for critic_metric in critic_metrics:
           train_results.append((critic_metric.name, critic_metric.result().numpy()))
           critic_metric.reset_states()
-
-
       if train_metrics_callback is not None:
         train_metrics_callback(collections.OrderedDict(train_results), global_step.numpy())
 
@@ -530,7 +553,7 @@ def train_eval(
           online_rb_checkpointer.save(global_step=global_step_val)
         rb_checkpointer.save(global_step=global_step_val)
 
-      if run_eval and global_step.numpy() % eval_interval == 0:
+      if run_eval and global_step_val % eval_interval == 0:
         results = metric_utils.eager_compute(
             eval_metrics,
             eval_tf_env,
@@ -541,8 +564,23 @@ def train_eval(
             summary_prefix='EvalMetrics',
         )
         if eval_metrics_callback is not None:
-          eval_metrics_callback(results, global_step.numpy())
+          eval_metrics_callback(results, global_step_val)
         metric_utils.log_metrics(eval_metrics)
+
+      if monitor and current_step % monitor_interval == 0:
+        monitor_time_step = monitor_py_env.reset()
+        monitor_policy_state = eval_policy.get_initial_state(1)
+        ep_len = 0
+        monitor_start = time.time()
+        while not monitor_time_step.is_last():
+          monitor_action = eval_policy.action(monitor_time_step, monitor_policy_state)
+          action, monitor_policy_state = monitor_action.action, monitor_action.state
+          monitor_time_step = monitor_py_env.step(action)
+          ep_len += 1
+        monitor_py_env.reset()
+        logging.debug('saved rollout at timestep {}, rollout length: {}, {} sec'.format(
+            global_step_val, ep_len, time.time() - monitor_start))
+
       logging.debug('iteration time: {} sec'.format(time.time() - start_time))
 
   if not keep_rb_checkpoint:

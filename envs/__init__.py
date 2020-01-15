@@ -65,14 +65,14 @@ if not registered:
   register(
     id="SafemrlCube-v0",
     entry_point=cube_env.SafemrlCubeEnv,
-    max_episode_steps=500,
-    kwargs=dict(max_steps=500,same_goals=True)
+    max_episode_steps=100,
+    kwargs=dict(max_steps=100,same_goals=True)
   )
 
   register(
     id="SafemrlCube-v1",
     entry_point=cube_env.SafemrlCubeEnv,
-    max_episode_steps=500,
-    kwargs=dict(max_steps=500,same_goals=False)
+    max_episode_steps=100,
+    kwargs=dict(max_steps=100,same_goals=False)
   )
 
