@@ -230,12 +230,11 @@ class CubeAverageScoreMetric(py_metrics.StreamingMetric):
     self._np_state = numpy_storage.NumpyState()
     self._np_state.adds_to_buff = np.array(0, dtype=float)
     # used so that buff is not over-populated by returned trajectories from short episodes
-    self._buff_add_limit = max(buffer_size/batch_size, 1)
     super(CubeAverageScoreMetric, self).__init__(
         name, buffer_size=buffer_size, batch_size=batch_size)
 
   def _reset(self, batch_size):
-    self._np_state.adds_to_buff = np.zeros(batch_size)
+    return
 
   def _batched_call(self, trajectory):
     """Processes the trajectory to update the metric.
@@ -248,6 +247,5 @@ class CubeAverageScoreMetric(py_metrics.StreamingMetric):
 
     if len(is_last[0]) > 0:
       for idx in is_last[0]:
-        if self._np_state.adds_to_buff[idx] < self._buff_add_limit:
-          self.add_to_buffer([self._env[idx].last_score])
-          self._np_state.adds_to_buff[idx] += 1
+        self.add_to_buffer([self._env[idx].last_score])
+        self._np_state.adds_to_buff[idx] += 1
