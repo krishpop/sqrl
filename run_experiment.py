@@ -16,9 +16,9 @@ FLAGS = flags.FLAGS
 
 flags.DEFINE_string('root_dir', 'safe-sac-sweeps/cube_rotate/', 'Root directory for writing logs/summaries/checkpoints.')
 flags.DEFINE_string('load_dir', None, 'Directory for loading pretrained policy.')
-flags.DEFINE_string('env_str', 'SafemrlCube-v0', 'Environment string')
+flags.DEFINE_string('env_str', 'SafemrlCube-v2', 'Environment string')
 flags.DEFINE_boolean('monitor', False, 'load environments with Monitor wrapper')
-flags.DEFINE_integer('num_steps', int(1e6), 'Number of training steps')
+flags.DEFINE_integer('num_steps', int(2e6), 'Number of training steps')
 flags.DEFINE_integer('layer_size', 256, 'Number of training steps')
 flags.DEFINE_integer('batch_size', 256, 'batch size used for training')
 flags.DEFINE_float('safety_gamma', 0.7, 'Safety discount term used for TD backups')
@@ -87,7 +87,7 @@ def gin_bindings_from_config(config):
   gin_bindings.append("INITIAL_NUM_STEPS = {}".format(
     config.initial_collect_steps))
   gin_bindings.append('ENV_STR = "{}"'.format(config.env_str))
-  gin_bindings.append('NUM_STEPS = {}'.format(config.num_steps))
+  gin_bindings.append('NUM_STEPS = {}'.format(FLAGS.num_steps))
   gin_bindings.append('LAYER_SIZE = {}'.format(config.layer_size))
   return gin_bindings
 
@@ -112,6 +112,8 @@ def main(_):
     root_path.append(config.root_dir)
     root_path.append(str(os.environ.get('WANDB_RUN_ID', 0)))
     config.update(dict(root_dir=osp.join(*root_path)), allow_val_change=True)
+  else:
+    config.update(dict(num_steps=FLAGS.num_steps), allow_val_change=True)
   gin_files = config.gin_files
   gin_bindings = gin_bindings_from_config(config)
   gin.parse_config_files_and_bindings(gin_files, gin_bindings)

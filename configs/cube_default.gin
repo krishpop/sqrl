@@ -7,10 +7,10 @@ import tf_agents.environments.suite_mujoco
 import tf_agents.environments.suite_gym
 import tf_agents.networks.actor_distribution_network
 
-ENV_STR = 'SafemrlCube-v0'
+ENV_STR = 'SafemrlCube-v2'
 ENV_LOAD_FN = @suite_mujoco.load
 ENV_WRAPPERS = [@cube_env.CubeTaskAgnWrapper]
-EP_LEN = 500
+EP_LEN = 100
 TRAIN_METRICS = [@metrics.AverageEarlyFailureMetric()]
 EVAL_METRICS = [@metrics.AverageEarlyFailureMetric()]
 ENV_METRIC_FACTORIES = [@metrics.CubeAverageScoreMetric]

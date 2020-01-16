@@ -54,6 +54,11 @@ class SafemrlCubeEnv(cube_env.CubeEnv):
     def last_score(self):
       return self._last_score
 
+    def do_reset(self, reset_pose, reset_vel, reset_goal=None):
+      obs = super(SafemrlCubeEnv, self).do_reset(reset_pose, reset_vel, reset_goal)
+      self._last_score = self.get_score(self.unwrapped.obs_dict)
+      return obs
+
     def step(self, a):
       # removes everything but score from output info
       a = np.array(a).squeeze()

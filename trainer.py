@@ -329,8 +329,18 @@ def train_eval(
     if agent_class in SAFETY_AGENTS:
       safety_critic_checkpointer.initialize_or_restore()
 
+    env_metrics = []
+    if env_metric_factories:
+      for env_metric in env_metric_factories:
+        env_metrics.append(tf_py_metric.TFPyMetric(env_metric([py_env.gym])))
+        # TODO: get env factory with parallel py envs
+        # if run_eval:
+        #   eval_metrics.append(env_metric([env.gym for env in eval_tf_env.pyenv._envs]))
+        # if online_critic:
+        #   sc_metrics.append(env_metric([env.gym for env in sc_tf_env.pyenv._envs]))
+
     collect_driver = collect_driver_class(
-        tf_env, collect_policy, observers=agent_observers + train_metrics)
+        tf_env, collect_policy, observers=agent_observers + train_metrics + env_metrics)
     if online_critic:
       logging.debug('online driver class: %s', online_driver_class)
       if online_driver_class is safe_dynamic_episode_driver.SafeDynamicEpisodeDriver:
@@ -361,21 +371,12 @@ def train_eval(
       initial_collect_driver_class(
           tf_env,
           initial_collect_policy,
-          observers=agent_observers + train_metrics).run()
+          observers=agent_observers + train_metrics + env_metrics).run()
       last_id = replay_buffer._get_last_id()  # pylint: disable=protected-access
       logging.info('Data saved after initial collection: %d steps', last_id)
       if online_critic:
         last_id = online_replay_buffer._get_last_id()  # pylint: disable=protected-access
         logging.debug('Data saved in online buffer after initial collection: %d steps', last_id)
-
-    if env_metric_factories:
-      for env_metric in env_metric_factories:
-        train_metrics.append(env_metric([py_env.gym]))
-        # TODO: get env factory with parallel py envs
-        # if run_eval:
-        #   eval_metrics.append(env_metric([env.gym for env in eval_tf_env.pyenv._envs]))
-        # if online_critic:
-        #   sc_metrics.append(env_metric([env.gym for env in sc_tf_env.pyenv._envs]))
 
     if run_eval:
       results = metric_utils.eager_compute(
@@ -405,12 +406,12 @@ def train_eval(
       online_dataset = online_replay_buffer.as_dataset(
           num_parallel_calls=3, sample_batch_size=batch_size, num_steps=2).prefetch(3)
       online_iterator = iter(online_dataset)
-      critic_metrics = [tf.keras.metrics.AUC(name='safety_critic_auc')]
-#                        tf.keras.metrics.TruePositives(name='safety_critic_tp'),
-#                        tf.keras.metrics.FalsePositives(name='safety_critic_fp'),
-#                        tf.keras.metrics.TrueNegatives(name='safety_critic_tn'),
-#                        tf.keras.metrics.FalseNegatives(name='safety_critic_fn'),
-#                        tf.keras.metrics.BinaryAccuracy(name='safety_critic_acc')]
+      critic_metrics = [tf.keras.metrics.AUC(name='safety_critic_auc'),
+                       tf.keras.metrics.TruePositives(name='safety_critic_tp'),
+                       tf.keras.metrics.FalsePositives(name='safety_critic_fp'),
+                       tf.keras.metrics.TrueNegatives(name='safety_critic_tn'),
+                       tf.keras.metrics.FalseNegatives(name='safety_critic_fn'),
+                       tf.keras.metrics.BinaryAccuracy(name='safety_critic_acc')]
       
       @common.function
       def critic_train_step():
@@ -447,7 +448,8 @@ def train_eval(
       tf_agent._safe_policy._safety_threshold = 0.6
       resample_counter = online_collect_policy._resample_counter
       mean_resample_ac = tf.keras.metrics.Mean(name='mean_unsafe_ac_freq')
-      if load_root_dir is None or finetune_sc:  # don't fine-tune safety critic
+      # don't fine-tune safety critic
+      if (global_step.numpy() == 0 and load_root_dir is None):
         for _ in range(train_sc_steps):
           sc_loss, lambda_loss = critic_train_step()  # pylint: disable=unused-variable
       tf_agent._safe_policy._safety_threshold = safety_eps
@@ -492,7 +494,6 @@ def train_eval(
                 train_step=global_step, step_metrics=sc_metrics[:2])
             tf.compat.v2.summary.scalar(
               name='resample_ac_freq', data=resample_ac_freq, step=global_step)
-          clear_rb()
 
       total_loss = mean_train_loss.result()
       mean_train_loss.reset_states()
@@ -532,6 +533,11 @@ def train_eval(
           train_metric.tf_summaries(
               train_step=global_step, step_metrics=train_metrics[:2])
         train_results.append((train_metric.name, train_metric.result().numpy()))
+      if env_metrics:
+        for env_metric in env_metrics:
+          env_metric.tf_summaries(
+            train_step=global_step, step_metrics=train_metrics[:2])
+          train_results.append((env_metric.name, env_metric.result().numpy()))
       if online_critic:
         for critic_metric in critic_metrics:
           train_results.append((critic_metric.name, critic_metric.result().numpy()))
@@ -552,6 +558,8 @@ def train_eval(
         if online_critic:
           online_rb_checkpointer.save(global_step=global_step_val)
         rb_checkpointer.save(global_step=global_step_val)
+      elif online_critic:
+        clear_rb()
 
       if run_eval and global_step_val % eval_interval == 0:
         results = metric_utils.eager_compute(

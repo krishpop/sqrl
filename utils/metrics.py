@@ -249,5 +249,5 @@ class CubeAverageScoreMetric(py_metrics.StreamingMetric):
     if len(is_last[0]) > 0:
       for idx in is_last[0]:
         if self._np_state.adds_to_buff[idx] < self._buff_add_limit:
-          self.add_to_buffer(self._env[idx].last_score)
+          self.add_to_buffer([self._env[idx].last_score])
           self._np_state.adds_to_buff[idx] += 1

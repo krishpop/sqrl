@@ -62,17 +62,13 @@ if not registered:
     kwargs={'env_randomizer': randomizers, 'max_steps': 500}
   )
 
-  register(
-    id="SafemrlCube-v0",
-    entry_point=cube_env.SafemrlCubeEnv,
-    max_episode_steps=100,
-    kwargs=dict(max_steps=100,same_goals=True)
-  )
-
-  register(
-    id="SafemrlCube-v1",
-    entry_point=cube_env.SafemrlCubeEnv,
-    max_episode_steps=100,
-    kwargs=dict(max_steps=100,same_goals=False)
-  )
-
+  v_num = 0
+  for n_steps in [500, 100, 1000]:
+    for same_goals in [True, False]:
+      register(
+        id="SafemrlCube-v{}".format(v_num),
+        entry_point=cube_env.SafemrlCubeEnv,
+        max_episode_steps=n_steps,
+        kwargs=dict(max_steps=n_steps,same_goals=same_goals)
+      )
+      v_num += 1
