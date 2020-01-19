@@ -16,8 +16,7 @@ class ContAcWrapper(gym.ActionWrapper):
 
   def action(self, action):
     disc_ac = np.digitize(action, self._buckets, right=False).item()
-    return disc_ac - 1  # returns discrete action~
-
+    return np.clip(disc_ac - 1, 0., 1.)  # returns discrete action~
 
 @gin.configurable
 class TaskAgnWrapper(gym.Wrapper):

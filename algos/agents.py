@@ -31,18 +31,21 @@ import numpy as np
 import tensorflow as tf
 
 from absl import logging
+import tensorflow_probability as tfp
 from tf_agents.agents.sac import sac_agent
 from tf_agents.networks import encoding_network
 from tf_agents.networks import network
 from tf_agents.networks import actor_distribution_network
-from tf_agents.policies import actor_policy
+from tf_agents.policies import actor_policy, tf_policy
 from tf_agents.policies import boltzmann_policy
 from tf_agents.specs import tensor_spec
+from tf_agents.trajectories import policy_step
 from tf_agents.utils import nest_utils
 from tf_agents.networks import normal_projection_network
 from tf_agents.networks import utils
 from tf_agents.distributions import utils as dist_utils
 
+tfd = tfp.distributions
 
 @gin.configurable
 def normal_projection_net(action_spec,
@@ -244,22 +247,43 @@ class CriticNetwork(network.Network):
         bias_initializer=tf.constant_initializer(-1),
         name='value')
 
-  def call(self, observations, step_type, network_state=()):
+  def call(self, observations, step_type, network_state=(), training=False):
     state, network_state = self._encoder(
-        observations, step_type=step_type, network_state=network_state)
+        observations, step_type=step_type, network_state=network_state,
+        training=training)
     q_val = self._value_layer(state)
     return tf.reshape(q_val, [-1]), network_state
 
 
+#### WCPG classes
+
+
 def _critic_normal_projection_net(output_spec,
                                   init_stddev=0.35,
-                                  init_means_output_factor=0.1):
+                                  init_means_output_factor=0.01):
   std_bias_initializer_value = np.log(np.exp(init_stddev) - 1)
 
   return normal_projection_network.NormalProjectionNetwork(
       output_spec,
       init_means_output_factor=init_means_output_factor,
       std_bias_initializer_value=std_bias_initializer_value,
+      mean_transform=None,
+      std_transform=sac_agent.std_clip_transform,
+      state_dependent_std=True,
+      scale_distribution=False)
+
+
+def _actor_normal_projection_net(output_spec,
+                                 init_stddev=2.0,  # WCPG default
+                                 init_means_output_factor=0.1):
+  std_bias_initializer_value = np.log(np.exp(init_stddev) - 1)
+
+  return normal_projection_network.NormalProjectionNetwork(
+      output_spec,
+      init_means_output_factor=init_means_output_factor,
+      std_bias_initializer_value=std_bias_initializer_value,
+      std_transform=sac_agent.std_clip_transform,
+      state_dependent_std=False,
       scale_distribution=False)
 
 
@@ -270,7 +294,7 @@ class DistributionalCriticNetwork(network.DistributionNetwork):
   def __init__(
       self,
       input_tensor_spec,
-      preprocessing_layer_size=64,
+      preprocessing_layer_size=256,
       joint_fc_layer_params=None,
       joint_dropout_layer_params=None,
       kernel_initializer=tf.compat.v1.keras.initializers.VarianceScaling(
@@ -311,11 +335,7 @@ class DistributionalCriticNetwork(network.DistributionNetwork):
                             tf.keras.layers.Lambda(lambda x: x))
     preprocessing_combiner = tf.keras.layers.Concatenate(axis=-1)
 
-    flat_action_spec = tf.nest.flatten(action_spec)
-    if len(flat_action_spec) > 1:
-      raise ValueError('Only a single action is supported by this network')
-    self._single_action_spec = flat_action_spec[0]
-    output_spec = tensor_spec.TensorSpec(shape=(), name='Z')
+    output_spec = tensor_spec.TensorSpec(shape=(1,), name='R')
 
     super(DistributionalCriticNetwork, self).__init__(
         input_tensor_spec=input_tensor_spec, output_spec=output_spec, state_spec=(), name=name)
@@ -331,36 +351,140 @@ class DistributionalCriticNetwork(network.DistributionNetwork):
         batch_squash=False)
     self._projection_network = _critic_normal_projection_net(output_spec)
 
-
-  def call(self, observations, step_type, network_state=()):
+  def call(self, observations, step_type, network_state=(), training=False):
     state, network_state = self._encoder(
-        observations, step_type=step_type, network_state=network_state)
-    q_val = self._var_layer(state)
-    return tf.reshape(q_val, [-1]), network_state
+      observations,
+      step_type=step_type,
+      network_state=network_state,
+      training=training)
+    outer_rank = nest_utils.get_outer_rank(observations, self.input_tensor_spec)
+    output_actions = self._projection_network(state, outer_rank)
+    return output_actions, network_state
 
 
 @gin.configurable
-class WcpgActorNetwork(actor_distribution_network.ActorDistributionNetwork):
+class WcpgActorNetwork(network.Network):
   def __init__(self,
                input_tensor_spec,
                output_tensor_spec,
-               preprocessing_layers=None,
-               preprocessing_combiner=tf.keras.layers.Concatenate(axis=-1),
-               fc_layer_params=(200, 100),
+               fc_layer_params=(256,),
                dropout_layer_params=None,
                activation_fn=tf.keras.activations.relu,
-               kernel_initializer=None,
+               kernel_initializer=tf.keras.initializers.VarianceScaling(
+                 scale=0.1, mode='fan_in', distribution='uniform'),
                batch_squash=True,
-               dtype=tf.float32,
-               name='WcpgActorDistributionNetwork'):
-    observation_spec, action_spec, alpha_spec = input_tensor_spec
-    super(WcpgActorNetwork, self).__init(
-        input_tensor_spec, output_tensor_spec, preprocessing_layers, preprocessing_combiner,
-        fc_layer_params=fc_layer_params, dropout_layer_params=dropout_layer_params,
-        activation_fn=activation_fn, kernel_initializer=kernel_initializer,
-        batch_squash=batch_squash, dtype=dtype, continuous_projection_net=_critic_normal_projection_net,
-        name=name)
+               name='WcpgActorNetwork'):
+    super(WcpgActorNetwork, self).__init__(
+      input_tensor_spec=input_tensor_spec,
+      state_spec=(),
+      name=name)
+    preprocessing_layers = [tf.keras.layers.Dense(256), tf.keras.layers.Dense(128)]
+    preprocessing_combiner = tf.keras.layers.Concatenate(axis=-1)
+    observation_spec, alpha_spec = input_tensor_spec
 
+    self._output_tensor_spec = output_tensor_spec
+    flat_action_spec = tf.nest.flatten(output_tensor_spec)
+    if len(flat_action_spec) > 1:
+      raise ValueError('Only a single action is supported by this network')
+    self._single_action_spec = flat_action_spec[0]
+    if self._single_action_spec.dtype not in [tf.float32, tf.float64]:
+      raise ValueError('Only float actions are supported by this network.')
+
+    self._alpha_spec = alpha_spec
+    self._encoder = encoding_network.EncodingNetwork(
+      input_tensor_spec,
+      preprocessing_layers=preprocessing_layers,
+      preprocessing_combiner=preprocessing_combiner,
+      fc_layer_params=fc_layer_params,
+      dropout_layer_params=dropout_layer_params,
+      activation_fn=activation_fn,
+      kernel_initializer=kernel_initializer,
+      batch_squash=batch_squash)
+    self._action_layer = tf.keras.layers.Dense(flat_action_spec[0].shape.num_elements(),
+            activation=tf.keras.activations.tanh,
+            kernel_initializer=tf.keras.initializers.RandomUniform(
+                minval=-0.003, maxval=0.003),
+            name='action')
+
+  def call(self, observations, step_type=(), network_state=(), training=False):
+    state, network_state = self._encoder(observations, step_type=step_type,
+                                         network_state=network_state, training=training)
+    return self._action_layer(state), network_state
+
+  @property
+  def alpha_spec(self):
+    return self._alpha_spec
+
+
+WcpgPolicyInfo = collections.namedtuple('WcpgPolicyInfo', ('alpha',))
+
+
+@gin.configurable
+class WcpgPolicy(actor_policy.ActorPolicy):
+  """A policy that awares safety."""
+
+  def __init__(self, time_step_spec, action_spec, actor_network, alpha=None,
+               alpha_sampler=None, observation_normalizer=None, clip=True,
+               training=False, name="WcpgPolicy"):
+    info_spec = WcpgPolicyInfo(alpha=actor_network.alpha_spec)
+    super(WcpgPolicy, self).__init__(time_step_spec, action_spec, actor_network, info_spec,
+                                     observation_normalizer, clip, training, name)
+    self._alpha = alpha
+    self._alpha_sampler = alpha_sampler or (lambda: np.random.uniform(0.1, 1.))
+
+  @property
+  def alpha(self):
+    if self._alpha is None:
+      self._alpha = self._alpha_sampler()
+    return self._alpha
+
+  def _apply_actor_network(self, time_step, policy_state):
+    observation = time_step.observation
+    if self._observation_normalizer:
+      observation = self._observation_normalizer.normalize(observation)
+    return self._actor_network((observation, np.array([self.alpha])[None]), time_step.step_type, policy_state,
+                               training=self._training)
+
+  def _distribution(self, time_step, policy_state):
+    if time_step.is_first() and not self._training:
+      self._alpha = None
+    distribution_step = super(WcpgPolicy, self)._distribution(time_step, policy_state)
+    return distribution_step._replace(info=WcpgPolicyInfo(alpha=self.alpha))
+
+
+class GaussianNoisePolicy(tf_policy.Base):
+  def __init__(self,
+               wrapped_policy,
+               exploration_noise_stddev=1.0,
+               clip=True,
+               name=None):
+
+    def _validate_action_spec(action_spec):
+      if not tensor_spec.is_continuous(action_spec):
+        raise ValueError('Gaussian Noise is applicable only to continuous actions.')
+
+    tf.nest.map_structure(_validate_action_spec, wrapped_policy.action_spec)
+    super(GaussianNoisePolicy, self).__init__(
+        wrapped_policy.time_step_spec,
+        wrapped_policy.action_spec,
+        wrapped_policy.policy_state_spec,
+        wrapped_policy.info_spec,
+        clip=clip,
+        name=name)
+    self._exploration_noise_stddev = exploration_noise_stddev
+    self._wrapped_policy = wrapped_policy
+
+  def _variables(self):
+    return self._wrapped_policy.variables()
+
+  def _action(self, time_step, policy_state, seed):
+    seed_stream = tfd.SeedStream(seed=seed, salt='gaussian_noise')
+    action_step = self._wrapped_policy.action(time_step, policy_state, seed_stream())
+    actions = action_step.action
+    actions += tf.random.normal(stddev=self._exploration_noise_stddev,
+                                shape=actions.shape,
+                                dtype=actions.dtype)
+    return policy_step.PolicyStep(actions, action_step.state, action_step.info)
 
 
 @gin.configurable
@@ -415,7 +539,6 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
     safe_ac_idx = tf.where(safe_ac_mask)
 
     resample_count = 0
-    start_time = time.time()
     while self._training and resample_count < 4 and not safe_ac_idx.shape.as_list()[0]:
       if self._resample_counter is not None:
         self._resample_counter()
@@ -449,36 +572,6 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
     ac = sampled_ac[safe_idx]
     assert ac.shape.as_list()[0] == 1, 'action shape is not correct: {}'.format(ac.shape.as_list())
     return ac, policy_state
-
-
-WcpgPolicyInfo = collections.namedtuple('WcpgPolicyInfo', ('alpha',))
-
-@gin.configurable
-class WcpgPolicy(actor_policy.ActorPolicy):
-  """A policy that awares safety."""
-
-  def __init__(self, alpha_spec, alpha=None, alpha_sampler=None, *args, **kwargs):
-    super(SafetyBoltzmannPolicy, self).__init__(*args, **kwargs)
-    info_spec = WcpgPolicyInfo(alpha=alpha_spec)
-    self._info_spec = info_spec
-    self._alpha = alpha
-    self._alpha_sampler = alpha_sampler or np.random.sample
-    self._setup_specs()  # run again to make sure specs are correctly updated
-
-  @property
-  def alpha(self):
-    if self._alpha is None:
-      self.resample_alpha()
-    return self._alpha
-
-  def resample_alpha(self):
-    self._alpha = self._alpha_sampler()
-
-  def _distribution(self, time_step, policy_state):
-    distribution_step = super(WcpgPolicy, self)._distribution(time_step, policy_state)
-    distribution_step = distribution_step._replace(
-        info=WcpgPolicyInfo(alpha=self.alpha))
-    return distribution_step
 
 
 BoltzmannPolicyInfo = collections.namedtuple('BoltzmannPolicyInfo',

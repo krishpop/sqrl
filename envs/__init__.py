@@ -63,12 +63,13 @@ if not registered:
   )
 
   v_num = 0
-  for n_steps in [500, 100, 1000]:
-    for same_goals in [True, False]:
-      register(
-        id="SafemrlCube-v{}".format(v_num),
-        entry_point=cube_env.SafemrlCubeEnv,
-        max_episode_steps=n_steps,
-        kwargs=dict(max_steps=n_steps,same_goals=same_goals)
-      )
-      v_num += 1
+  for ac_hist in [0, 7]:
+    for n_steps in [500, 100, 1000]:
+      for same_goals in [True, False]:
+        register(
+          id="SafemrlCube-v{}".format(v_num),
+          entry_point=cube_env.SafemrlCubeEnv,
+          max_episode_steps=n_steps,
+          kwargs=dict(max_steps=n_steps,same_goals=same_goals, action_history=ac_hist)
+        )
+        v_num += 1

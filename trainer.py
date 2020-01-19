@@ -47,7 +47,7 @@ from tf_agents.utils import common
 from safemrl.algos import agents
 from safemrl.algos import safe_sac_agent
 from safemrl.algos import ensemble_sac_agent
-#from safemrl.algos import wcpg_agent
+from safemrl.algos import wcpg_agent
 from safemrl.utils import safe_dynamic_episode_driver
 from safemrl.utils import misc
 from safemrl.utils import metrics
@@ -193,7 +193,15 @@ def train_eval(
     logging.debug('obs spec: %s', observation_spec)
     logging.debug('action spec: %s', action_spec)
 
-    if agent_class: #is not wcpg_agent.WcpgAgent:
+    if type(agent_class) == type(wcpg_agent.WcpgAgent):
+      alpha_spec = tensor_spec.BoundedTensorSpec(shape=(1,), dtype=tf.float32, minimum=0., maximum=1.,
+                                                 name='alpha')
+      input_tensor_spec = (observation_spec, action_spec, alpha_spec)
+      critic_net = agents.DistributionalCriticNetwork(
+        input_tensor_spec, preprocessing_layer_size=critic_preprocessing_layer_size,
+        joint_fc_layer_params=critic_joint_fc_layers)
+      actor_net = agents.WcpgActorNetwork((observation_spec, alpha_spec), action_spec)
+    else:
       actor_net = actor_distribution_network.ActorDistributionNetwork(
         observation_spec,
         action_spec,
@@ -202,19 +210,6 @@ def train_eval(
       critic_net = agents.CriticNetwork(
         (observation_spec, action_spec),
         joint_fc_layer_params=critic_joint_fc_layers)
-    else:
-      alpha_spec = tensor_spec.BoundedTensorSpec(shape=(), dtype=tf.float32, minimum=0., maximum=1.,
-                                                 name='alpha')
-      input_tensor_spec = (observation_spec, action_spec, alpha_spec)
-      critic_preprocessing_layers = (tf.keras.layers.Dense(critic_preprocessing_layer_size),
-                                     tf.keras.layers.Dense(critic_preprocessing_layer_size),
-                                     tf.keras.layers.Lambda(lambda x: x))
-      critic_net = agents.DistributionalCriticNetwork(input_tensor_spec,
-                                                      joint_fc_layer_params=critic_joint_fc_layers)
-      actor_preprocessing_layers = (tf.keras.layers.Dense(actor_preprocessing_layer_size),
-                                    tf.keras.layers.Dense(actor_preprocessing_layer_size),
-                                    tf.keras.layers.Lambda(lambda x: x))
-      actor_net = agents.WcpgActorNetwork(input_tensor_spec, preprocessing_layers=actor_preprocessing_layers)
 
     if agent_class in SAFETY_AGENTS:
       safety_critic_net = agents.CriticNetwork(
@@ -242,7 +237,7 @@ def train_eval(
         critic_optimizers=critic_optimizers,
         debug_summaries=debug_summaries
       )
-    else:  # assume is using SacAgent
+    else:  # assume is using SacAgent or WCPG
       logging.debug(critic_net.input_tensor_spec)
       tf_agent = agent_class(
         time_step_spec,
@@ -297,8 +292,11 @@ def train_eval(
       collect_policy = tf_agent.collect_policy  # pylint: disable=protected-access
       online_collect_policy = tf_agent._safe_policy
 
-    initial_collect_policy = random_tf_policy.RandomTFPolicy(
-        time_step_spec, action_spec)
+    if type(agent_class) == type(wcpg_agent.WcpgAgent):
+      initial_collect_policy = tf_agent.collect_policy
+    else:
+      initial_collect_policy = random_tf_policy.RandomTFPolicy(
+          time_step_spec, action_spec)
 
     train_checkpointer = common.Checkpointer(
         ckpt_dir=train_dir,

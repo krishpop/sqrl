@@ -8,3 +8,7 @@ CRITIC_LAYERS = (%LAYER_SIZE, %LAYER_SIZE)
 actor_distribution_network.ActorDistributionNetwork.fc_layer_params = %ACTOR_LAYERS
 
 agents.CriticNetwork.joint_fc_layer_params = %CRITIC_LAYERS
+
+agents.WcpgActorNetwork.fc_layer_params = (%LAYER_SIZE, )
+
+agents.DistributionalCriticNetwork.joint_fc_layer_params = (%LAYER_SIZE, %LAYER_SIZE)

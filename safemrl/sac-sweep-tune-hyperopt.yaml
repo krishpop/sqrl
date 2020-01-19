@@ -1,0 +1,55 @@
+program: run_experiment.py
+tune:
+  _wandb:
+    seed: 760266996
+    versions:
+      hyperopt: 0.2.1
+      tune: 0.7.6
+      wandb: 0.8.19
+  num_samples: 20
+  run_or_experiment: run_experiment.py
+  search_alg:
+    hyperopt.HyperOptSearch:
+      max_concurrent: 4
+      metric: Metrics/AverageReturn
+      mode: max
+      points_to_evaluate:
+      - actor_lr: -3.5
+        critic_lr: -3.5
+        entropy_lr: -3.5
+        initial_log_alpha: 0
+        reward_scale_factor: 1.0
+        target_entropy: -8
+      space:
+        actor_lr:
+          hyperopt.hp.uniform:
+          - actor_lr
+          - -5
+          - -3
+        critic_lr:
+          hyperopt.hp.uniform:
+          - critic_lr
+          - -5
+          - -3
+        entropy_lr:
+          hyperopt.hp.uniform:
+          - entropy_lr
+          - -5
+          - -3
+        initial_log_alpha:
+          hyperopt.hp.uniform:
+          - initial_log_alpha
+          - -2
+          - 2
+        reward_scale_factor:
+          hyperopt.hp.uniform:
+          - reward_scale_factor
+          - 0
+          - 2
+        target_entropy:
+          hyperopt.hp.choice:
+          - target_entropy
+          - - -16
+            - -8
+            - -4
+            - -2

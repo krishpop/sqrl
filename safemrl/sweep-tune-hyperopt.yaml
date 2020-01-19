@@ -1,0 +1,37 @@
+program: run_experiment.py
+tune:
+  _wandb:
+    seed: 2834426991
+    versions:
+      hyperopt: 0.2.1
+      tune: 0.7.6
+      wandb: 0.8.19
+  num_samples: 10
+  run_or_experiment: run_experiment.py
+  search_alg:
+    hyperopt.HyperOptSearch:
+      metric: Metrics/AverageReturn
+      mode: max
+      space:
+        batch_size:
+          hyperopt.hp.choice:
+          - batch_size
+          - - 32
+            - 256
+        reward_scale_factor:
+          hyperopt.hp.uniform:
+          - reward_scale_factor
+          - 0
+          - 2
+        safety_gamma:
+          hyperopt.hp.uniform:
+          - safety_gamma
+          - 0.05
+          - 0.1
+        target_entropy:
+          hyperopt.hp.choice:
+          - target_entropy
+          - - -16
+            - -8
+            - -4
+            - -2

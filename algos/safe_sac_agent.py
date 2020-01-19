@@ -27,9 +27,7 @@ from __future__ import print_function
 
 import collections
 
-from absl import logging  # pylint: disable=unused-import
 import gin
-import numpy as np  # pylint: disable=unused-import
 import tensorflow as tf
 import tensorflow_probability as tfp
 from tf_agents.agents import tf_agent
@@ -150,23 +148,10 @@ class SafeSacAgent(sac_agent.SacAgent):
     return safety_critic_loss
 
   def _experience_to_transitions(self, experience):
-    outer_shape = nest_utils.get_outer_shape(experience, self.collect_data_spec)
-    boundary_mask = nest_utils.where(
-        tf.logical_not(experience.is_boundary()),
-        tf.ones(outer_shape, dtype=tf.bool),
-        tf.zeros(outer_shape, dtype=tf.bool))
-    boundary_mask = tf.math.reduce_all(boundary_mask, axis=1)
-    experience = nest_utils.fast_map_structure(
-        lambda *x: tf.boolean_mask(*x, boundary_mask), experience
-    )
-    transitions = trajectory.to_transition(experience)
-    flat_structure = [
-      tf.nest.flatten(s, expand_composites=False)
-      for s in experience]
-
-    time_steps, policy_steps, next_time_steps = transitions
-    logging.debug('computed boundary mask shape: %s', boundary_mask.shape)
-    logging.debug('experience observation shape: %s', experience.observation['observation'].shape)
+    # Assumes that experience does not contain time dimension, only batch dimension
+    boundary_mask = experience.is_boundary()[:, 0]
+    experience = nest_utils.fast_map_structure(lambda *x: tf.boolean_mask(*x, boundary_mask), experience)
+    time_steps, policy_steps, next_time_steps = trajectory.to_transition(experience)
 
     actions = policy_steps.action
     if (self.train_sequence_length is not None and

@@ -14,11 +14,11 @@ from absl import logging
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string('root_dir', 'safe-sac-sweeps/cube_rotate/', 'Root directory for writing logs/summaries/checkpoints.')
+flags.DEFINE_string('root_dir', 'wcpg-sweeps/cube_rotate/', 'Root directory for writing logs/summaries/checkpoints.')
 flags.DEFINE_string('load_dir', None, 'Directory for loading pretrained policy.')
 flags.DEFINE_string('env_str', 'SafemrlCube-v2', 'Environment string')
 flags.DEFINE_boolean('monitor', False, 'load environments with Monitor wrapper')
-flags.DEFINE_integer('num_steps', int(2e6), 'Number of training steps')
+flags.DEFINE_integer('num_steps', int(1e6), 'Number of training steps')
 flags.DEFINE_integer('layer_size', 256, 'Number of training steps')
 flags.DEFINE_integer('batch_size', 256, 'batch size used for training')
 flags.DEFINE_float('safety_gamma', 0.7, 'Safety discount term used for TD backups')
@@ -31,19 +31,19 @@ flags.DEFINE_float('critic_lr', None, 'Learning rate for critic')
 flags.DEFINE_float('entropy_lr', None, 'Learning rate for alpha')
 flags.DEFINE_float('target_update_tau', 0.001, 'Factor for soft update of the target networks')
 flags.DEFINE_integer('target_update_period', 1, 'Period for soft update of the target networks')
-flags.DEFINE_integer('initial_collect_steps', 5000, 'Number of steps to collect with random policy')
+flags.DEFINE_integer('initial_collect_steps', 1000, 'Number of steps to collect with random policy')
 flags.DEFINE_float('initial_log_alpha', 0., 'Initial value for log_alpha')
 flags.DEFINE_float('gamma', 0.99, 'Future reward discount factor')
 flags.DEFINE_float('reward_scale_factor', 1.0, 'Reward scale factor for SacAgent')
 flags.DEFINE_float('gradient_clipping', None, 'Gradient clipping factor for SacAgent')
-flags.DEFINE_multi_string('gin_files', ['cube_default.gin', 'sac_safe_online.gin'],
+flags.DEFINE_multi_string('gin_files', ['cube_default.gin', 'wcpg.gin'],
                           'gin files to load')
 flags.DEFINE_boolean('debug_summaries', False, 'Debug summaries for critic and actor')
 flags.DEFINE_boolean('debug', False, 'Debug logging')
 flags.DEFINE_boolean('eager_debug', False, 'Debug in eager mode if True')
 flags.DEFINE_integer('seed', None, 'Seed to seed envs and algorithm with')
 
-wandb.init(sync_tensorboard=True, entity='krshna', project='safemrl', config=FLAGS, monitor_gym=True)
+wandb.init(sync_tensorboard=True, entity='krshna', project='safemrl-2', config=FLAGS, monitor_gym=True)
 
 
 def gin_bindings_from_config(config):
@@ -54,8 +54,12 @@ def gin_bindings_from_config(config):
     agent_prefix = 'safe_sac_agent.SafeSacAgentOnline'
   elif 'sac.gin' in config.gin_files:
     agent_prefix = 'sac_agent.SacAgent'
-  gin_bindings.append(
-      '{}.target_entropy = {}'.format(agent_prefix, config.target_entropy))
+  elif 'wcpg.gin' in config.gin_files:
+    agent_prefix = 'wcpg_agent.WcpgAgent'
+
+  if agent_prefix != 'wcpg_agent.WcpgAgent':
+    gin_bindings.append(
+        '{}.target_entropy = {}'.format(agent_prefix, config.target_entropy))
   gin_bindings.append(
       '{}.reward_scale_factor = {}'.format(agent_prefix, config.reward_scale_factor))
   if config.gradient_clipping:
