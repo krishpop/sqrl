@@ -3,6 +3,7 @@ import gin
 import tensorflow as tf
 import tensorflow_probability as tfp
 
+from absl import logging
 from safemrl.algos import agents
 from tf_agents.agents import tf_agent
 from tf_agents.agents.ddpg import ddpg_agent
@@ -148,7 +149,7 @@ class WcpgAgent(ddpg_agent.DdpgAgent):
         train_step_counter=train_step_counter)
 
   def _experience_to_transitions(self, experience):
-    boundary_mask = experience.is_boundary()[:, 0]
+    boundary_mask = tf.logical_not(experience.is_boundary()[:, 0])
     experience = nest_utils.fast_map_structure(lambda *x: tf.boolean_mask(*x, boundary_mask), experience)
     time_steps, policy_steps, next_time_steps = trajectory.to_transition(experience)
 
@@ -243,6 +244,8 @@ class WcpgAgent(ddpg_agent.DdpgAgent):
       Z, _ = self._critic_network(critic_net_input,
                                   time_steps.step_type)
       q_means, q_vars = Z.loc, Z.scale
+      # tf.print('q_mean:', q_means, 'target q_mean:', next_target_means, output_stream=tf.logging.info)
+      # tf.print('q_var:', q_vars, 'target q_var:', next_target_vars, output_stream=tf.logging.info)
       mean_td_error = self._td_errors_loss_fn(td_mean_target, q_means)
       var_td_error = tf.sqrt(self._td_errors_loss_fn(td_var_target, q_vars))
       critic_loss = mean_td_error + var_td_error

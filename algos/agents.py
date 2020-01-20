@@ -41,6 +41,7 @@ from tf_agents.policies import boltzmann_policy
 from tf_agents.specs import tensor_spec
 from tf_agents.trajectories import policy_step
 from tf_agents.utils import nest_utils
+from tf_agents.utils import common
 from tf_agents.networks import normal_projection_network
 from tf_agents.networks import utils
 from tf_agents.distributions import utils as dist_utils
@@ -298,7 +299,7 @@ class DistributionalCriticNetwork(network.DistributionNetwork):
       joint_fc_layer_params=None,
       joint_dropout_layer_params=None,
       kernel_initializer=tf.compat.v1.keras.initializers.VarianceScaling(
-          scale=0.01, mode='fan_in', distribution='uniform'),
+          scale=2, mode='fan_in', distribution='uniform'),
       activation_fn=tf.nn.relu,
       name='DistributionalCriticNetwork'):
     """Creates an instance of `DistributionalCriticNetwork`.
@@ -440,9 +441,24 @@ class WcpgPolicy(actor_policy.ActorPolicy):
 
   def _apply_actor_network(self, time_step, policy_state):
     observation = time_step.observation
+
     if self._observation_normalizer:
       observation = self._observation_normalizer.normalize(observation)
-    return self._actor_network((observation, np.array([self.alpha])[None]), time_step.step_type, policy_state,
+    if tf.is_tensor(observation):
+      if not nest_utils.is_batched_nested_tensors(observation, self.time_step_spec.observation):
+        observation = nest_utils.batch_nested_tensors(observation)
+    else:
+      if nest_utils.get_outer_array_shape(observation, self.time_step_spec.observation) == []:
+        observation = nest_utils.batch_nested_array(observation)
+
+    alpha = np.array(self.alpha)[None]
+    if tf.is_tensor(observation):
+      tensor_shape = observation.shape.as_list()
+    else:
+      tensor_shape = observation.shape
+    if len(tensor_shape) != 1:
+      alpha = alpha[None]
+    return self._actor_network((observation, alpha), time_step.step_type, policy_state,
                                training=self._training)
 
   def _distribution(self, time_step, policy_state):
