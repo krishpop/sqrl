@@ -7,6 +7,7 @@ from absl import logging
 from safemrl.algos import agents
 from tf_agents.agents import tf_agent
 from tf_agents.agents.ddpg import ddpg_agent
+from tf_agents.policies import gaussian_policy
 from tf_agents.trajectories import trajectory
 from tf_agents.utils import common
 from tf_agents.utils import nest_utils
@@ -27,10 +28,10 @@ class WcpgAgent(ddpg_agent.DdpgAgent):
                critic_network,
                actor_optimizer=None,
                critic_optimizer=None,
-               exploration_noise_stddev=0.1,
+               exploration_noise_stddev=2.0,
                target_actor_network=None,
                target_critic_network=None,
-               target_update_tau=1.0,
+               target_update_tau=0.001,
                target_update_period=1,
                dqda_clipping=None,
                td_errors_loss_fn=tf.math.squared_difference,
@@ -133,9 +134,9 @@ class WcpgAgent(ddpg_agent.DdpgAgent):
     collect_policy = agents.WcpgPolicy(
         time_step_spec=time_step_spec, action_spec=action_spec,
         actor_network=self._actor_network, clip=False)
-    collect_policy = agents.GaussianNoisePolicy(
+    collect_policy = gaussian_policy.GaussianPolicy(
         collect_policy,
-        exploration_noise_stddev=exploration_noise_stddev,
+        scale=exploration_noise_stddev,
         clip=True)
 
     super(ddpg_agent.DdpgAgent, self).__init__(
@@ -172,6 +173,8 @@ class WcpgAgent(ddpg_agent.DdpgAgent):
       tape.watch(trainable_critic_variables)
       critic_loss, mean_loss, var_loss = self.critic_loss(
           time_steps, actions, alphas, next_time_steps, weights=weights)
+    tf.debugging.check_numerics(mean_loss, 'Critic mean loss is inf or nan.')
+    tf.debugging.check_numerics(var_loss, 'Critic var loss is inf or nan.')
     tf.debugging.check_numerics(critic_loss, 'Critic loss is inf or nan.')
     critic_grads = tape.gradient(critic_loss, trainable_critic_variables)
     self._apply_gradients(critic_grads, trainable_critic_variables,
@@ -191,10 +194,8 @@ class WcpgAgent(ddpg_agent.DdpgAgent):
     self.train_step_counter.assign_add(1)
     self._update_target()
 
-    # TODO(b/124382360): Compute per element TD loss and return in loss_info.
     total_loss = actor_loss + critic_loss
-    return tf_agent.LossInfo(total_loss,
-                             WcpgInfo(actor_loss, critic_loss, mean_loss, var_loss))
+    return tf_agent.LossInfo(total_loss, WcpgInfo(actor_loss, critic_loss, mean_loss, var_loss))
 
   def critic_loss(self, time_steps, actions, alphas, next_time_steps, weights=None):
     """Computes the critic loss for DDPG training.
@@ -216,7 +217,7 @@ class WcpgAgent(ddpg_agent.DdpgAgent):
           next_target_critic_net_input, next_time_steps.step_type)
       next_target_means = tf.reshape(next_target_Z.loc, [-1])
       next_target_vars = tf.reshape(next_target_Z.scale, [-1])
-      target_critic_net_input = (time_steps.observation, target_actions, alphas)
+      target_critic_net_input = (time_steps.observation, actions, alphas)
       target_Z, _ = self._target_critic_network(
         target_critic_net_input, next_time_steps.step_type)
       target_means = tf.reshape(target_Z.loc, [-1])
@@ -233,21 +234,27 @@ class WcpgAgent(ddpg_agent.DdpgAgent):
           self._reward_scale_factor * next_time_steps.reward +
           self._gamma * next_time_steps.discount * next_target_means)
 
-      # Refer to Eq. 8 in WCPG
+      # Refer to Eq. 6 in WCPG
       td_var_target = tf.stop_gradient(
         (self._reward_scale_factor * next_time_steps.reward) ** 2 +
          2 * self._gamma * next_time_steps.discount * next_time_steps.reward * next_target_means +
          next_time_steps.discount * self._gamma ** 2 * next_target_vars + self._gamma ** 2 *
-         next_target_means - next_time_steps.discount * target_means ** 2)
+         next_target_means ** 2 - target_means ** 2)
+      tf.debugging.check_numerics(target_means, 'target means is inf or nan.')
+      tf.debugging.check_numerics(next_target_means, 'next target means is inf or nan.')
+      tf.debugging.check_numerics(td_var_target, 'target var is inf or nan.')
+      tf.debugging.check_numerics(td_var_target, 'target var is inf or nan.')
 
       critic_net_input = (time_steps.observation, actions, alphas)
       Z, _ = self._critic_network(critic_net_input,
                                   time_steps.step_type)
-      q_means, q_vars = Z.loc, Z.scale
+      q_means = tf.reshape(Z.loc, [-1])
+      q_vars = tf.reshape(Z.scale, [-1])
+
       # tf.print('q_mean:', q_means, 'target q_mean:', next_target_means, output_stream=tf.logging.info)
       # tf.print('q_var:', q_vars, 'target q_var:', next_target_vars, output_stream=tf.logging.info)
       mean_td_error = self._td_errors_loss_fn(td_mean_target, q_means)
-      var_td_error = tf.sqrt(self._td_errors_loss_fn(td_var_target, q_vars))
+      var_td_error = q_vars - 2 * tf.sqrt(tf.abs(td_var_target*q_vars))  # tf.sqrt(self._td_errors_loss_fn(td_var_target, q_vars))
       critic_loss = mean_td_error + var_td_error
 
       if nest_utils.is_batched_nested_tensors(
@@ -265,6 +272,9 @@ class WcpgAgent(ddpg_agent.DdpgAgent):
       if self._debug_summaries:
         mean_td_errors = td_mean_target - q_means
         var_td_errors = td_var_target - q_vars
+        common.generate_tensor_summaries('target_means', target_means, self.train_step_counter)
+        common.generate_tensor_summaries('next_target_vars', next_target_vars, self.train_step_counter)
+        common.generate_tensor_summaries('next_target_means', next_target_means, self.train_step_counter)
         common.generate_tensor_summaries('mean_td_errors', mean_td_errors,
                                          self.train_step_counter)
         common.generate_tensor_summaries('var_td_errors', var_td_errors,
@@ -278,11 +288,12 @@ class WcpgAgent(ddpg_agent.DdpgAgent):
         common.generate_tensor_summaries('q_var', q_vars,
                                          self.train_step_counter)
 
-      return critic_loss, mean_td_error, var_td_error
+      return critic_loss, tf.reduce_mean(mean_td_error), tf.reduce_mean(var_td_error)
 
   def _compute_cvar(self, q_means, q_vars, alpha):
-    return (q_means - self._standard_normal.prob(alpha)/self._standard_normal.cdf(alpha) *
-            tf.sqrt(q_vars))
+    alpha_quantile = self._standard_normal.quantile(alpha)
+    return (q_means - self._standard_normal.prob(alpha_quantile)/self._standard_normal.cdf(alpha_quantile) *
+            q_vars)
 
   def actor_loss(self, time_steps, alphas, weights=None):
     """Computes the actor_loss for DDPG training.
@@ -291,7 +302,6 @@ class WcpgAgent(ddpg_agent.DdpgAgent):
       time_steps: A batch of timesteps.
       weights: Optional scalar or element-wise (per-batch-entry) importance
         weights.
-      # TODO(b/124383618): Add an action norm regularizer.
     Returns:
       actor_loss: A scalar actor loss.
     """
@@ -302,14 +312,17 @@ class WcpgAgent(ddpg_agent.DdpgAgent):
         tape.watch(actions)
         q, _ = self._critic_network((time_steps.observation, actions, alphas),
                                                      time_steps.step_type)
-        q_means, q_vars = q.loc, q.scale
-        actions = tf.nest.flatten(actions)
+        q_means, q_vars = tf.reshape(q.loc, [-1]), tf.reshape(q.scale, [-1])
+        # actions = tf.nest.flatten(actions)
 
       cvar = self._compute_cvar(q_means, q_vars, alphas)
-      actor_loss = tf.reduce_mean(cvar)
+      actor_loss = -tf.reduce_mean(cvar)
 
       with tf.name_scope('Losses/'):
         tf.compat.v2.summary.scalar(
             name='actor_loss', data=actor_loss, step=self.train_step_counter)
+
+      if self._debug_summaries:
+        common.generate_tensor_summaries('cvar', cvar, self.train_step_counter)
 
     return actor_loss

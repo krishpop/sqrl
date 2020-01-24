@@ -42,6 +42,7 @@ flags.DEFINE_string('root_dir', None,
                     'Root directory for writing logs/summaries/checkpoints.')
 flags.DEFINE_multi_string('gin_file', None, 'Paths to the study config files.')
 flags.DEFINE_multi_string('gin_param', None, 'Gin binding to pass through.')
+flags.DEFINE_boolean('monitor', False, 'whether or not to use monitoring')
 flags.DEFINE_boolean('debug', False, 'set log level to debug if True')
 flags.DEFINE_boolean('eager_debug', False, 'Debug in eager mode if True')
 flags.DEFINE_integer('seed', None, 'Seed to seed envs and algorithm with')
@@ -77,7 +78,8 @@ def main(_):
     logging.debug('Set seed: %d', FLAGS.seed)
   gin.parse_config_files_and_bindings(FLAGS.gin_file, FLAGS.gin_param, skip_unknown=True)
 
-  trainer.train_eval(root_dir, eager_debug=FLAGS.eager_debug, seed=FLAGS.seed)
+  trainer.train_eval(root_dir, eager_debug=FLAGS.eager_debug, seed=FLAGS.seed,
+                     monitor=FLAGS.monitor)
 
 
 if __name__ == '__main__':

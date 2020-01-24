@@ -10,5 +10,6 @@ actor_distribution_network.ActorDistributionNetwork.fc_layer_params = %ACTOR_LAY
 agents.CriticNetwork.joint_fc_layer_params = %CRITIC_LAYERS
 
 agents.WcpgActorNetwork.fc_layer_params = (%LAYER_SIZE, )
-
+agents.WcpgActorNetwork.preprocessing_layer_size = %LAYER_SIZE
 agents.DistributionalCriticNetwork.joint_fc_layer_params = (%LAYER_SIZE, %LAYER_SIZE)
+agents.DistributionalCriticNetwork.preprocessing_layer_size = %LAYER_SIZE

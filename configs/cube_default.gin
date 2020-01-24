@@ -15,7 +15,7 @@ TRAIN_METRICS = [@metrics.AverageEarlyFailureMetric()]
 EVAL_METRICS = [@metrics.AverageEarlyFailureMetric()]
 ENV_METRIC_FACTORIES = [@metrics.CubeAverageScoreMetric]
 metrics.AverageEarlyFailureMetric.max_episode_len = %EP_LEN
-
+cube_env.SafemrlCubeEnv.drop_penalty = -500.
 suite_mujoco.load.max_episode_steps = %EP_LEN
 
 actor_distribution_network.ActorDistributionNetwork.preprocessing_combiner = (
