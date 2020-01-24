@@ -15,7 +15,7 @@ NUM_EVAL = 30
 NUM_STEPS = 1000000
 LEARNING_RATE = 3e-4
 SLOW_LEARNING_RATE = 1e-5
-AGENT_CLASS = @sac_agent.SacAgent
+AGENT_CLASS = 'sac'
 INITIAL_NUM_STEPS = %EP_LEN
 
 trainer.train_eval.env_name = %ENV_STR

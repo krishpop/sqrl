@@ -12,7 +12,7 @@ include 'sac.gin'
 
 LEARNING_RATE = 3e-5
 CRITIC_LEARNING_RATE = 1e-5
-AGENT_CLASS = @wcpg_agent.WcpgAgent
+AGENT_CLASS = 'wcpg'
 
 trainer.train_eval.gym_env_wrappers = []
 

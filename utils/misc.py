@@ -171,7 +171,7 @@ def process_replay_buffer(replay_buffer, max_ep_len=500, k=1, as_tensor=True):
     fail = 1 - int(term_idx - last_idx >= max_ep_len + 1)
     ep_rew = tf.gather(rew, np.arange(last_idx, term_idx), axis=1)
     labels = np.zeros(ep_rew.shape_as_list())  # ignore obs dim
-    labels[:, Ellipsis, -k:] = fail
+    labels[:, -k:] = fail
     k_labels.append(labels)
     last_idx = term_idx
 

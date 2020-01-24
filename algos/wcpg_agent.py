@@ -254,7 +254,8 @@ class WcpgAgent(ddpg_agent.DdpgAgent):
       # tf.print('q_mean:', q_means, 'target q_mean:', next_target_means, output_stream=tf.logging.info)
       # tf.print('q_var:', q_vars, 'target q_var:', next_target_vars, output_stream=tf.logging.info)
       mean_td_error = self._td_errors_loss_fn(td_mean_target, q_means)
-      var_td_error = q_vars - 2 * tf.sqrt(tf.abs(td_var_target*q_vars))  # tf.sqrt(self._td_errors_loss_fn(td_var_target, q_vars))
+      # var_td_error = tf.sqrt(self._td_errors_loss_fn(td_var_target, q_vars))
+      var_td_error = td_var_target + q_vars - 2 * tf.sqrt(tf.abs(td_var_target*q_vars))
       critic_loss = mean_td_error + var_td_error
 
       if nest_utils.is_batched_nested_tensors(

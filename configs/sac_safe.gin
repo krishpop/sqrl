@@ -24,11 +24,11 @@ NUM_STEPS = 500000
 LEARNING_RATE = 3e-4
 SLOW_LEARNING_RATE = 1e-5
 INITIAL_NUM_STEPS = %EP_LEN
+AGENT_CLASS = 'sac_safe'
 
 trainer.train_eval.env_name = %ENV_STR
 trainer.train_eval.env_load_fn = %ENV_LOAD_FN
 trainer.train_eval.gym_env_wrappers = %ENV_WRAPPERS
-trainer.train_eval.agent_class = @safe_sac_agent.SafeSacAgent
 trainer.train_eval.keep_rb_checkpoint = True
 trainer.train_eval.train_metrics = %TRAIN_METRICS
 trainer.train_eval.eval_metrics = %EVAL_METRICS

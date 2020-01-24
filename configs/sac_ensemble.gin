@@ -11,7 +11,7 @@ import safemrl.algos.ensemble_sac_agent
 include "sac.gin"
 
 NUM_STEPS = 1000000
-AGENT_CLASS = @ensemble_sac_agent.EnsembleSacAgent
+AGENT_CLASS = 'sac_ensemble'
 
 trainer.train_eval.ensemble = True
 trainer.train_eval.n_critics = 3

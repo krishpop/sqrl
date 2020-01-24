@@ -42,7 +42,7 @@ from tf_agents.policies import random_tf_policy
 from tf_agents.replay_buffers import tf_uniform_replay_buffer
 from tf_agents.replay_buffers import episodic_replay_buffer
 from tf_agents.specs import tensor_spec
-from tf_agents.utils import common
+from tf_agents.utils import common, nest_utils
 
 from safemrl.algos import agents
 from safemrl.algos import safe_sac_agent
@@ -64,6 +64,10 @@ SAFETY_ENVS = ['IndianWell', 'IndianWell2', 'IndianWell3', 'DrunkSpider', 'pddm_
                'SafemrlCube', 'highway',
                'DrunkSpiderShort', 'MinitaurGoalVelocityEnv', 'MinitaurRandFrictionGoalVelocityEnv']
 SAFETY_AGENTS = [safe_sac_agent.SafeSacAgent, safe_sac_agent.SafeSacAgentOnline]
+ALGOS = {'sac': sac_agent.SacAgent, 'sac_safe': safe_sac_agent.SafeSacAgent,
+         'sac_safe_online': safe_sac_agent.SafeSacAgentOnline,
+         'sac_ensemble': ensemble_sac_agent.EnsembleSacAgent,
+         'wcpg': wcpg_agent.WcpgAgent}
 
 # How many steps does the loss have to be diverged for (too high, inf, nan)
 # after the training terminates. This should prevent termination on short loss
@@ -126,6 +130,9 @@ def train_eval(
     eager_debug=False,
     env_metric_factories=None):  # pylint: disable=unused-argument
   """A simple train and eval for SC-SAC."""
+  if isinstance(agent_class, str):
+    assert agent_class in ALGOS, 'trainer.train_eval: agent_class {} invalid'.format(agent_class)
+    agent_class = ALGOS.get(agent_class)
   n_envs = n_envs or num_eval_episodes
   root_dir = os.path.expanduser(root_dir)
   train_dir = os.path.join(root_dir, 'train')
@@ -194,7 +201,7 @@ def train_eval(
 
     # tf.summary.trace_on()
 
-    if type(agent_class) == type(wcpg_agent.WcpgAgent):
+    if agent_class == wcpg_agent.WcpgAgent:
       alpha_spec = tensor_spec.BoundedTensorSpec(shape=(1,), dtype=tf.float32, minimum=0., maximum=1.,
                                                  name='alpha')
       input_tensor_spec = (observation_spec, action_spec, alpha_spec)
@@ -213,6 +220,7 @@ def train_eval(
         joint_fc_layer_params=critic_joint_fc_layers)
 
     if agent_class in SAFETY_AGENTS:
+      logging.debug('making safety agent')
       safety_critic_net = agents.CriticNetwork(
           (observation_spec, action_spec),
           joint_fc_layer_params=critic_joint_fc_layers)
@@ -289,12 +297,12 @@ def train_eval(
       eval_policy = tf_agent.policy
       collect_policy = tf_agent.collect_policy
     else:
-      eval_policy = tf_agent.policy  # pylint: disable=protected-access
-      collect_policy = tf_agent.collect_policy  # pylint: disable=protected-access
+      eval_policy = tf_agent.policy
+      collect_policy = tf_agent.collect_policy
       online_collect_policy = tf_agent._safe_policy
 
     initial_collect_policy = random_tf_policy.RandomTFPolicy(time_step_spec, action_spec)
-    if type(agent_class) == type(wcpg_agent.WcpgAgent):
+    if agent_class == wcpg_agent.WcpgAgent:
       initial_collect_policy = agents.WcpgPolicyWrapper(initial_collect_policy)
 
     # tf.summary.trace_off()
@@ -359,8 +367,8 @@ def train_eval(
       config_saver = gin.tf.GinConfigSaverHook(train_dir, summarize_config=True)
       tf.function(config_saver.after_create_session)()
 
-    if (type(agent_class) != type(safe_sac_agent.SafeSacAgentOnline) and
-        type(agent_class) != type(safe_sac_agent.SafeSacAgent)):
+    if (agent_class != safe_sac_agent.SafeSacAgentOnline and
+        agent_class != safe_sac_agent.SafeSacAgent):
       collect_driver.run = common.function(collect_driver.run)
     if eager_debug:
       tf.config.experimental_run_functions_eagerly(True)
@@ -413,19 +421,22 @@ def train_eval(
                        tf.keras.metrics.TrueNegatives(name='safety_critic_tn'),
                        tf.keras.metrics.FalseNegatives(name='safety_critic_fn'),
                        tf.keras.metrics.BinaryAccuracy(name='safety_critic_acc')]
+      rb_rewards = None
       
       @common.function
       def critic_train_step():
         """Builds critic training step."""
         start_time = time.time()
         experience, buf_info = next(online_iterator)
+        boundary_mask = tf.logical_not(experience.is_boundary()[:, 0])
+        experience = nest_utils.fast_map_structure(lambda *x: tf.boolean_mask(*x, boundary_mask), experience)
         if env_name.split('-')[0] in SAFETY_ENVS:
           safe_rew = experience.observation['task_agn_rew'][:, 1]
         else:
-          safe_rew = misc.process_replay_buffer(
-              online_replay_buffer, as_tensor=True)
+          safe_rew = rb_rewards
           safe_rew = tf.gather(safe_rew, tf.squeeze(buf_info.ids), axis=1)
-        ret = tf_agent.train_sc(experience, safe_rew, metrics=critic_metrics, weights=None)
+        weights = 1 - safe_rew + safe_rew / tf.reduce_mean(safe_rew + 1e-16)
+        ret = tf_agent.train_sc(experience, safe_rew, metrics=critic_metrics, weights=weights)
         logging.debug('critic train step: {} sec'.format(time.time() - start_time))
         return ret
 
@@ -451,6 +462,7 @@ def train_eval(
       mean_resample_ac = tf.keras.metrics.Mean(name='mean_unsafe_ac_freq')
       # don't fine-tune safety critic
       if (global_step.numpy() == 0 and load_root_dir is None):
+        rb_rewards = misc.process_replay_buffer(online_replay_buffer, as_tensor=True)
         for _ in range(train_sc_steps):
           sc_loss, lambda_loss = critic_train_step()  # pylint: disable=unused-variable
       tf_agent._safe_policy._safety_threshold = safety_eps
@@ -484,14 +496,15 @@ def train_eval(
       if train_metrics_callback is not None:
         train_metrics_callback(
           collections.OrderedDict([(k, v.numpy()) for k, v in train_loss.extra._asdict().items()]),
-          step=global_step.numpy())
+          step=current_step)
         train_metrics_callback(
-          {'train_loss': mean_train_loss.result().numpy()}, step=global_step.numpy())
+          {'train_loss': mean_train_loss.result().numpy()}, step=current_step)
 
       if online_critic and current_step % train_sc_interval == 0:
           batch_time_step = sc_tf_env.reset()
           batch_policy_state = online_collect_policy.get_initial_state(sc_tf_env.batch_size)
           online_driver.run(time_step=batch_time_step, policy_state=batch_policy_state)
+          rb_rewards = misc.process_replay_buffer(online_replay_buffer, as_tensor=True)
           for _ in range(train_sc_steps):
             sc_loss, lambda_loss = critic_train_step()  # pylint: disable=unused-variable
 
@@ -520,7 +533,7 @@ def train_eval(
       time_acc += time.time() - start_time
 
       if current_step % log_interval == 0:
-        logging.info('step = %d, loss = %f', global_step.numpy(), total_loss)
+        logging.info('step = %d, loss = %f', current_step, total_loss)
         steps_per_sec = (global_step.numpy() - timed_at_step) / time_acc
         logging.info('%.3f steps/sec', steps_per_sec)
         tf.compat.v2.summary.scalar(

@@ -243,9 +243,8 @@ class CriticNetwork(network.Network):
     self._value_layer = tf.keras.layers.Dense(
         1,
         activation=None,
-        kernel_initializer=tf.keras.initializers.RandomUniform(
-            minval=-0.003, maxval=0.003),
-        bias_initializer=tf.constant_initializer(-1),
+        kernel_initializer=tf.keras.initializers.RandomUniform(-0.003, 0.003),
+        bias_initializer=tf.keras.initializers.RandomUniform(-1, 0),
         name='value')
 
   def call(self, observations, step_type, network_state=(), training=False):
@@ -345,7 +344,7 @@ class DistributionalCriticNetwork(network.DistributionNetwork):
       network_state=network_state,
       training=training)
     outer_rank = nest_utils.get_outer_rank(observations, self.input_tensor_spec)
-    output_actions, network_state = self._projection_network(state, outer_rank)
+    output_actions = self._projection_network(state, outer_rank)
     return output_actions, network_state
 
 

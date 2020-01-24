@@ -30,6 +30,7 @@ import collections
 import gin
 import tensorflow as tf
 import tensorflow_probability as tfp
+from absl import logging
 from tf_agents.agents import tf_agent
 from tf_agents.agents.sac import sac_agent
 from tf_agents.policies import actor_policy
@@ -522,7 +523,7 @@ class SafeSacAgent(sac_agent.SacAgent):
       return actor_loss
 
   def alpha_loss(self, time_steps, weights=None):
-    """Computes the alpha_loss for SC-SAC training.
+    """Computes the alpha_loss for SQRL training.
 
     Args:
       time_steps: A batch of timesteps.
@@ -591,7 +592,6 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
                name=None):
     self._safety_critic_network = safety_critic_network
     self._train_critic_online = train_critic_online
-
     super(SafeSacAgentOnline,
           self).__init__(time_step_spec, action_spec, critic_network,
                          actor_network, actor_optimizer, critic_optimizer,
@@ -654,6 +654,8 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
         tau=1.0)
 
   def _experience_to_transitions(self, experience):
+    boundary_mask = tf.logical_not(experience.is_boundary()[:, 0])
+    experience = nest_utils.fast_map_structure(lambda *x: tf.boolean_mask(*x, boundary_mask), experience)
     transitions = trajectory.to_transition(experience)
     time_steps, policy_steps, next_time_steps = transitions
     actions = policy_steps.action
@@ -1102,7 +1104,7 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
       return actor_loss
 
   def lambda_loss(self, time_steps, actions, safety_rewards, weights=None):
-    """Computes the lambda_loss for SC-SAC training.
+    """Computes the lambda_loss for SQRL training.
 
     Args:
       time_steps: A batch of timesteps.
@@ -1114,32 +1116,31 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
     Returns:
       lambda_loss: A scalar lambda_loss loss.
     """
-    with tf.name_scope('lambda_loss'):
-      tf.nest.assert_same_structure(time_steps, self.time_step_spec)
+    tf.nest.assert_same_structure(time_steps, self.time_step_spec)
 
-      pred_input = (time_steps.observation, actions)
-      q_val, unused_network_state1 = self._safety_critic_network(
-          pred_input, time_steps.step_type)
-      q_safe = tf.nn.sigmoid(q_val)
+    pred_input = (time_steps.observation, actions)
+    q_val, unused_network_state1 = self._safety_critic_network(
+        pred_input, time_steps.step_type)
+    q_safe = tf.nn.sigmoid(q_val)
 
-      lambda_loss = (
-          self._log_lambda * tf.stop_gradient(q_safe - self._target_safety))
+    lambda_loss = (
+        self._log_lambda * tf.stop_gradient(q_safe - self._target_safety))
 
-      if weights is not None:
-        lambda_loss *= weights
+    if weights is not None:
+      lambda_loss *= weights
 
-      lambda_loss = tf.reduce_mean(input_tensor=lambda_loss)
+    lambda_loss = tf.reduce_mean(input_tensor=lambda_loss)
 
-      if self._debug_summaries:
-        common.generate_tensor_summaries('lambda_loss', lambda_loss,
-                                         self.train_step_counter)
-        common.generate_tensor_summaries('log_lambda', self._log_lambda,
-                                         self.train_step_counter)
+    with tf.name_scope('Losses'):
+      tf.compat.v2.summary.scalar(
+        name='lambda_loss', data=lambda_loss, step=self.train_step_counter)
+      tf.compat.v2.summary.scalar(
+        name='log_lambda', data=self._log_lambda, step=self.train_step_counter)
 
       return lambda_loss
 
   def alpha_loss(self, time_steps, weights=None):
-    """Computes the alpha_loss for SC-SAC training.
+    """Computes the alpha_loss for SQRL training.
 
     Args:
       time_steps: A batch of timesteps.

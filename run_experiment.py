@@ -14,13 +14,13 @@ from absl import logging
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string('root_dir', 'wcpg-sweeps/cube_rotate/', 'Root directory for writing logs/summaries/checkpoints.')
+flags.DEFINE_string('root_dir', 'sqrl/cube_rotate/', 'Root directory for writing logs/summaries/checkpoints.')
 flags.DEFINE_string('load_dir', None, 'Directory for loading pretrained policy.')
 flags.DEFINE_string('env_str', 'SafemrlCube-v2', 'Environment string')
-flags.DEFINE_boolean('monitor', False, 'load environments with Monitor wrapper')
+flags.DEFINE_boolean('monitor', True, 'load environments with Monitor wrapper')
 flags.DEFINE_integer('num_steps', int(1e6), 'Number of training steps')
 flags.DEFINE_integer('layer_size', 256, 'Number of training steps')
-flags.DEFINE_integer('batch_size', 512, 'batch size used for training')
+flags.DEFINE_integer('batch_size', 256, 'batch size used for training')
 flags.DEFINE_float('safety_gamma', 0.7, 'Safety discount term used for TD backups')
 flags.DEFINE_float('target_safety', 0.1, 'Target safety for safety critic')
 flags.DEFINE_integer('target_entropy', None, 'Target entropy for policy')
@@ -29,7 +29,8 @@ flags.DEFINE_float('drop_penalty', -500., 'Drop penalty for cube environment')
 flags.DEFINE_float('lr', None, 'Learning rate for all optimizers')
 flags.DEFINE_float('actor_lr', 3e-4, 'Learning rate for actor')
 flags.DEFINE_float('critic_lr', 3e-4, 'Learning rate for critic')
-flags.DEFINE_float('entropy_lr', None, 'Learning rate for alpha')
+flags.DEFINE_float('entropy_lr', 3e-4, 'Learning rate for alpha')
+flags.DEFINE_float('safety_lr', 3e-4, 'Learning rate for safety critic')
 flags.DEFINE_float('target_update_tau', 0.001, 'Factor for soft update of the target networks')
 flags.DEFINE_integer('target_update_period', 1, 'Period for soft update of the target networks')
 flags.DEFINE_integer('initial_collect_steps', 2000, 'Number of steps to collect with random policy')
@@ -37,9 +38,9 @@ flags.DEFINE_float('initial_log_alpha', 0., 'Initial value for log_alpha')
 flags.DEFINE_float('gamma', 0.99, 'Future reward discount factor')
 flags.DEFINE_float('reward_scale_factor', 1.0, 'Reward scale factor for SacAgent')
 flags.DEFINE_float('gradient_clipping', 2., 'Gradient clipping factor for SacAgent')
-flags.DEFINE_multi_string('gin_files', ['cube_default.gin', 'wcpg.gin'],
+flags.DEFINE_multi_string('gin_files', ['cube_default.gin', 'sac_safe_online.gin'],
                           'gin files to load')
-flags.DEFINE_boolean('debug_summaries', False, 'Debug summaries for critic and actor')
+flags.DEFINE_boolean('debug_summaries', True, 'Debug summaries for critic and actor')
 flags.DEFINE_boolean('debug', False, 'Debug logging')
 flags.DEFINE_boolean('eager_debug', False, 'Debug in eager mode if True')
 flags.DEFINE_integer('seed', None, 'Seed to seed envs and algorithm with')
@@ -97,6 +98,8 @@ def gin_bindings_from_config(config):
     gin_bindings.append('cr_opt/tf.keras.optimizers.Adam.learning_rate = {}'.format(config.critic_lr))
     if agent_prefix != 'wcpg_agent.WcpgAgent':
       gin_bindings.append('al_opt/tf.keras.optimizers.Adam.learning_rate = {}'.format(config.entropy_lr))
+    if agent_prefix.split('.')[0] == 'safe_sac_agent':
+      gin_bindings.append('sc_opt/tf.keras.optimizers.Adam.learning_rate = {}'.format(config.safety_lr))
 
   gin_bindings.append("INITIAL_NUM_STEPS = {}".format(config.initial_collect_steps))
   gin_bindings.append('ENV_STR = "{}"'.format(config.env_str))
@@ -122,7 +125,7 @@ def main(_):
     root_path = []
     if os.environ.get('EXP_DIR'):
       root_path.append(os.environ.get('EXP_DIR'))
-    root_path.append(config.root_dir)
+    root_path.append(FLAGS.root_dir)
     root_path.append(str(os.environ.get('WANDB_RUN_ID', 0)))
     config.update(dict(root_dir=osp.join(*root_path)), allow_val_change=True)
   else:

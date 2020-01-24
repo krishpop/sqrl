@@ -23,7 +23,7 @@ INITIAL_NUM_STEPS = %EP_LEN  # 500
 NUM_STEPS = 500000
 LEARNING_RATE = 3e-4
 SLOW_LEARNING_RATE = 1e-5
-AGENT_CLASS = @safe_sac_agent.SafeSacAgentOnline
+AGENT_CLASS = 'sac_safe_online'
 
 trainer.train_eval.env_name = %ENV_STR
 trainer.train_eval.env_load_fn = %ENV_LOAD_FN
