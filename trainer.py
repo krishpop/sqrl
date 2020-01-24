@@ -71,7 +71,7 @@ SAFETY_AGENTS = [safe_sac_agent.SafeSacAgent, safe_sac_agent.SafeSacAgentOnline]
 TERMINATE_AFTER_DIVERGED_LOSS_STEPS = 100
 
 
-@gin.configurable(blacklist=['seed', 'eager_debug', 'monitor'])
+@gin.configurable(blacklist=['seed', 'eager_debug', 'monitor', 'debug_summaries'])
 def train_eval(
     root_dir,
     load_root_dir=None,
@@ -118,7 +118,7 @@ def train_eval(
     keep_rb_checkpoint=False,
     log_interval=1000,
     summary_interval=1000,
-    monitor_interval=1000,
+    monitor_interval=5000,
     summaries_flush_secs=10,
     early_termination_fn=None,
     debug_summaries=False,
@@ -126,7 +126,6 @@ def train_eval(
     eager_debug=False,
     env_metric_factories=None):  # pylint: disable=unused-argument
   """A simple train and eval for SC-SAC."""
-
   n_envs = n_envs or num_eval_episodes
   root_dir = os.path.expanduser(root_dir)
   train_dir = os.path.join(root_dir, 'train')
@@ -192,6 +191,8 @@ def train_eval(
 
     logging.debug('obs spec: %s', observation_spec)
     logging.debug('action spec: %s', action_spec)
+
+    # tf.summary.trace_on()
 
     if type(agent_class) == type(wcpg_agent.WcpgAgent):
       alpha_spec = tensor_spec.BoundedTensorSpec(shape=(1,), dtype=tf.float32, minimum=0., maximum=1.,
@@ -292,11 +293,11 @@ def train_eval(
       collect_policy = tf_agent.collect_policy  # pylint: disable=protected-access
       online_collect_policy = tf_agent._safe_policy
 
+    initial_collect_policy = random_tf_policy.RandomTFPolicy(time_step_spec, action_spec)
     if type(agent_class) == type(wcpg_agent.WcpgAgent):
-      initial_collect_policy = tf_agent.collect_policy
-    else:
-      initial_collect_policy = random_tf_policy.RandomTFPolicy(
-          time_step_spec, action_spec)
+      initial_collect_policy = agents.WcpgPolicyWrapper(initial_collect_policy)
+
+    # tf.summary.trace_off()
 
     train_checkpointer = common.Checkpointer(
         ckpt_dir=train_dir,
@@ -331,7 +332,6 @@ def train_eval(
     if env_metric_factories:
       for env_metric in env_metric_factories:
         env_metrics.append(tf_py_metric.TFPyMetric(env_metric([py_env.gym])))
-        # TODO: get env factory with parallel py envs
         # if run_eval:
         #   eval_metrics.append(env_metric([env.gym for env in eval_tf_env.pyenv._envs]))
         # if online_critic:
@@ -359,8 +359,8 @@ def train_eval(
       config_saver = gin.tf.GinConfigSaverHook(train_dir, summarize_config=True)
       tf.function(config_saver.after_create_session)()
 
-    if (type(agent_class) == type(sac_agent.SacAgent) or
-        type(agent_class) == type(wcpg_agent.WcpgAgent)):
+    if (type(agent_class) != type(safe_sac_agent.SafeSacAgentOnline) and
+        type(agent_class) != type(safe_sac_agent.SafeSacAgent)):
       collect_driver.run = common.function(collect_driver.run)
     if eager_debug:
       tf.config.experimental_run_functions_eagerly(True)
@@ -371,6 +371,8 @@ def train_eval(
           tf_env,
           initial_collect_policy,
           observers=agent_observers + train_metrics + env_metrics).run()
+      # initial_collect_driver.run = common.function(initial_collect_driver.run, autograph=False)
+      # initial_collect_driver.run()
       last_id = replay_buffer._get_last_id()  # pylint: disable=protected-access
       logging.info('Data saved after initial collection: %d steps', last_id)
       if online_critic:
@@ -479,6 +481,13 @@ def train_eval(
       if current_step == 0:
         logging.debug('train policy: {} sec'.format(time.time() - train_time))
 
+      if train_metrics_callback is not None:
+        train_metrics_callback(
+          collections.OrderedDict([(k, v.numpy()) for k, v in train_loss.extra._asdict().items()]),
+          step=global_step.numpy())
+        train_metrics_callback(
+          {'train_loss': mean_train_loss.result().numpy()}, step=global_step.numpy())
+
       if online_critic and current_step % train_sc_interval == 0:
           batch_time_step = sc_tf_env.reset()
           batch_policy_state = online_collect_policy.get_initial_state(sc_tf_env.batch_size)
@@ -502,9 +511,8 @@ def train_eval(
         loss_divergence_counter += 1
         if loss_divergence_counter > TERMINATE_AFTER_DIVERGED_LOSS_STEPS:
           loss_diverged = True
-          logging.debug('Loss diverged, critic_loss: %s, actor_loss: %s, alpha_loss: %s',
-                        train_loss.extra.critic_loss, train_loss.extra.actor_loss,
-                        train_loss.extra.alpha_loss)
+          logging.debug('Loss diverged, critic_loss: %s, actor_loss: %s',
+                        train_loss.extra.critic_loss, train_loss.extra.actor_loss)
           break
       else:
         loss_divergence_counter = 0
@@ -542,7 +550,7 @@ def train_eval(
           train_results.append((critic_metric.name, critic_metric.result().numpy()))
           critic_metric.reset_states()
       if train_metrics_callback is not None:
-        train_metrics_callback(collections.OrderedDict(train_results), global_step.numpy())
+        train_metrics_callback(collections.OrderedDict(train_results), step=global_step.numpy())
 
       global_step_val = global_step.numpy()
       if global_step_val % train_checkpoint_interval == 0:

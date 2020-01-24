@@ -1,9 +1,9 @@
 .idea/
 .DS_Store
-safemrl/wandb
-safemrl/tfagents
-safemrl/data
-safemrl/videos
+wandb/
+tfagents/
+data/
+videos/
 *.swp
 *.pyc
 .ipynb_checkpoints

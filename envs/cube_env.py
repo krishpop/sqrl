@@ -33,10 +33,11 @@ GOAL_TASKS = {
 #####################################
 
 
+@gin.configurable
 class SafemrlCubeEnv(cube_env.CubeEnv):
 
     def __init__(self, same_goals=False, goal_task=('left', 'right', 'up', 'down'),
-                 max_steps=100, action_history=7):
+                 drop_penalty=-1000., max_steps=100, action_history=7):
       #####################################
       #####################################
 
@@ -51,6 +52,7 @@ class SafemrlCubeEnv(cube_env.CubeEnv):
       #####################################
       self._max_steps = max_steps
       self._same_goals = same_goals
+      self._drop_penalty = drop_penalty
       self._goal_options = [GOAL_TASKS[k] for k in goal_task]
       self._action_history = action_history
       super(SafemrlCubeEnv, self).__init__()
@@ -91,6 +93,35 @@ class SafemrlCubeEnv(cube_env.CubeEnv):
       self._last_score = i['score']
       i = {'score': i['score']}
       return o, r, d, i
+
+    def get_reward(self, observations, actions):
+        #initialize and reshape as needed, for batch mode
+        r_total, dones = super(SafemrlCubeEnv, self).get_reward(observations, actions)
+
+        if len(observations.shape)==1:
+            observations = np.expand_dims(observations, axis = 0)
+            actions = np.expand_dims(actions, axis = 0)
+            batch_mode = False
+        else:
+            batch_mode = True
+
+        obj_height = observations[:,24+2]
+        zeros = np.zeros(obj_height.shape)
+
+        #fall
+        is_fall = zeros.copy()
+        is_fall[obj_height < -0.1] = 1
+
+        #done based on is_fall
+        dones = (is_fall==1) if not self.startup else zeros
+
+        #rewards
+        self.reward_dict['drop_penalty'] = self._drop_penalty * is_fall
+        self.reward_dict['r_total'] = self.reward_dict['ori_dist'] + self.reward_dict['drop_penalty']
+
+        if not batch_mode:
+            return self.reward_dict['r_total'][0], dones[0]
+        return self.reward_dict['r_total'], dones
 
     def create_goal_trajectory(self):
 

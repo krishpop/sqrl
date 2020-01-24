@@ -274,20 +274,6 @@ def _critic_normal_projection_net(output_spec,
       scale_distribution=False)
 
 
-def _actor_normal_projection_net(output_spec,
-                                 init_stddev=2.0,  # WCPG default
-                                 init_means_output_factor=0.1):
-  std_bias_initializer_value = np.log(np.exp(init_stddev) - 1)
-
-  return normal_projection_network.NormalProjectionNetwork(
-      output_spec,
-      init_means_output_factor=init_means_output_factor,
-      std_bias_initializer_value=std_bias_initializer_value,
-      std_transform=sac_agent.std_clip_transform,
-      state_dependent_std=False,
-      scale_distribution=False)
-
-
 @gin.configurable
 class DistributionalCriticNetwork(network.DistributionNetwork):
   """DistributionalCriticNetwork implemented with encoder networks"""
@@ -295,11 +281,11 @@ class DistributionalCriticNetwork(network.DistributionNetwork):
   def __init__(
       self,
       input_tensor_spec,
-      preprocessing_layer_size=256,
-      joint_fc_layer_params=None,
+      preprocessing_layer_size=64,
+      joint_fc_layer_params=(64,),
       joint_dropout_layer_params=None,
       kernel_initializer=tf.compat.v1.keras.initializers.VarianceScaling(
-          scale=2, mode='fan_in', distribution='uniform'),
+          scale=1. / 3., mode='fan_in', distribution='uniform'),
       activation_fn=tf.nn.relu,
       name='DistributionalCriticNetwork'):
     """Creates an instance of `DistributionalCriticNetwork`.
@@ -332,8 +318,8 @@ class DistributionalCriticNetwork(network.DistributionNetwork):
     observation_spec, action_spec, alpha_spec = input_tensor_spec
 
     preprocessing_layers = (tf.keras.layers.Dense(preprocessing_layer_size),
-                            tf.keras.layers.Dense(preprocessing_layer_size),
-                            tf.keras.layers.Lambda(lambda x: x))
+                            tf.keras.layers.Lambda(lambda x: x),
+                            tf.keras.layers.Dense(preprocessing_layer_size))
     preprocessing_combiner = tf.keras.layers.Concatenate(axis=-1)
 
     output_spec = tensor_spec.TensorSpec(shape=(1,), name='R')
@@ -359,7 +345,7 @@ class DistributionalCriticNetwork(network.DistributionNetwork):
       network_state=network_state,
       training=training)
     outer_rank = nest_utils.get_outer_rank(observations, self.input_tensor_spec)
-    output_actions = self._projection_network(state, outer_rank)
+    output_actions, network_state = self._projection_network(state, outer_rank)
     return output_actions, network_state
 
 
@@ -368,18 +354,20 @@ class WcpgActorNetwork(network.Network):
   def __init__(self,
                input_tensor_spec,
                output_tensor_spec,
-               fc_layer_params=(256,),
+               preprocessing_layer_size=32,
+               fc_layer_params=(32,),
                dropout_layer_params=None,
                activation_fn=tf.keras.activations.relu,
-               kernel_initializer=tf.keras.initializers.VarianceScaling(
-                 scale=0.1, mode='fan_in', distribution='uniform'),
+               kernel_initializer=tf.compat.v1.keras.initializers.VarianceScaling(
+                  scale=1. / 3., mode='fan_in', distribution='uniform'),
                batch_squash=True,
                name='WcpgActorNetwork'):
     super(WcpgActorNetwork, self).__init__(
       input_tensor_spec=input_tensor_spec,
       state_spec=(),
       name=name)
-    preprocessing_layers = [tf.keras.layers.Dense(256), tf.keras.layers.Dense(128)]
+    preprocessing_layers = [tf.keras.layers.Dense(preprocessing_layer_size),
+                            tf.keras.layers.Dense(preprocessing_layer_size/2)]
     preprocessing_combiner = tf.keras.layers.Concatenate(axis=-1)
     observation_spec, alpha_spec = input_tensor_spec
 
@@ -448,24 +436,46 @@ class WcpgPolicy(actor_policy.ActorPolicy):
       if not nest_utils.is_batched_nested_tensors(observation, self.time_step_spec.observation):
         observation = nest_utils.batch_nested_tensors(observation)
     else:
-      if nest_utils.get_outer_array_shape(observation, self.time_step_spec.observation) == []:
+      if not nest_utils.get_outer_array_shape(observation, self.time_step_spec.observation):
         observation = nest_utils.batch_nested_array(observation)
 
-    alpha = np.array(self.alpha)[None]
-    if tf.is_tensor(observation):
-      tensor_shape = observation.shape.as_list()
-    else:
-      tensor_shape = observation.shape
-    if len(tensor_shape) != 1:
-      alpha = alpha[None]
+    alpha = np.array([self.alpha])[None]
     return self._actor_network((observation, alpha), time_step.step_type, policy_state,
                                training=self._training)
 
   def _distribution(self, time_step, policy_state):
-    if time_step.is_first() and not self._training:
+    if time_step.is_first():
       self._alpha = None
     distribution_step = super(WcpgPolicy, self)._distribution(time_step, policy_state)
     return distribution_step._replace(info=WcpgPolicyInfo(alpha=self.alpha))
+
+
+class WcpgPolicyWrapper(tf_policy.Base):
+  def __init__(self, wrapped_policy, alpha=None, alpha_sampler=None, clip=True, name=None):
+    alpha_spec = tensor_spec.BoundedTensorSpec(shape=(1,), dtype=tf.float32, minimum=0., maximum=1.,
+                                               name='alpha')
+    super(WcpgPolicyWrapper, self).__init__(
+      wrapped_policy.time_step_spec,
+      wrapped_policy.action_spec,
+      wrapped_policy.policy_state_spec,
+      WcpgPolicyInfo(alpha=alpha_spec),
+      clip=clip,
+      name=name)
+    self._wrapped_policy = wrapped_policy
+    self._alpha = alpha
+    self._alpha_sampler = alpha_sampler or (lambda: np.random.uniform(0.1, 1.))
+
+  @property
+  def alpha(self):
+    if self._alpha is None:
+      self._alpha = self._alpha_sampler()
+    return self._alpha
+
+  def _action(self, time_step, policy_state, seed):
+    if time_step.is_first():
+      self._alpha = None
+    action_step = self._wrapped_policy.action(time_step, policy_state, seed)
+    return action_step._replace(info=WcpgPolicyInfo(alpha=self.alpha))
 
 
 class GaussianNoisePolicy(tf_policy.Base):

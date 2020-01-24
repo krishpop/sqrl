@@ -20,22 +20,23 @@ flags.DEFINE_string('env_str', 'SafemrlCube-v2', 'Environment string')
 flags.DEFINE_boolean('monitor', False, 'load environments with Monitor wrapper')
 flags.DEFINE_integer('num_steps', int(1e6), 'Number of training steps')
 flags.DEFINE_integer('layer_size', 256, 'Number of training steps')
-flags.DEFINE_integer('batch_size', 256, 'batch size used for training')
+flags.DEFINE_integer('batch_size', 512, 'batch size used for training')
 flags.DEFINE_float('safety_gamma', 0.7, 'Safety discount term used for TD backups')
 flags.DEFINE_float('target_safety', 0.1, 'Target safety for safety critic')
 flags.DEFINE_integer('target_entropy', None, 'Target entropy for policy')
 flags.DEFINE_float('friction', None, 'update minitaur friction param')
-flags.DEFINE_float('lr', 3e-4, 'Learning rate for all optimizers')
-flags.DEFINE_float('actor_lr', None, 'Learning rate for actor')
-flags.DEFINE_float('critic_lr', None, 'Learning rate for critic')
+flags.DEFINE_float('drop_penalty', -500., 'Drop penalty for cube environment')
+flags.DEFINE_float('lr', None, 'Learning rate for all optimizers')
+flags.DEFINE_float('actor_lr', 3e-4, 'Learning rate for actor')
+flags.DEFINE_float('critic_lr', 3e-4, 'Learning rate for critic')
 flags.DEFINE_float('entropy_lr', None, 'Learning rate for alpha')
 flags.DEFINE_float('target_update_tau', 0.001, 'Factor for soft update of the target networks')
 flags.DEFINE_integer('target_update_period', 1, 'Period for soft update of the target networks')
-flags.DEFINE_integer('initial_collect_steps', 1000, 'Number of steps to collect with random policy')
+flags.DEFINE_integer('initial_collect_steps', 2000, 'Number of steps to collect with random policy')
 flags.DEFINE_float('initial_log_alpha', 0., 'Initial value for log_alpha')
 flags.DEFINE_float('gamma', 0.99, 'Future reward discount factor')
 flags.DEFINE_float('reward_scale_factor', 1.0, 'Reward scale factor for SacAgent')
-flags.DEFINE_float('gradient_clipping', None, 'Gradient clipping factor for SacAgent')
+flags.DEFINE_float('gradient_clipping', 2., 'Gradient clipping factor for SacAgent')
 flags.DEFINE_multi_string('gin_files', ['cube_default.gin', 'wcpg.gin'],
                           'gin files to load')
 flags.DEFINE_boolean('debug_summaries', False, 'Debug summaries for critic and actor')
@@ -43,7 +44,8 @@ flags.DEFINE_boolean('debug', False, 'Debug logging')
 flags.DEFINE_boolean('eager_debug', False, 'Debug in eager mode if True')
 flags.DEFINE_integer('seed', None, 'Seed to seed envs and algorithm with')
 
-wandb.init(sync_tensorboard=True, entity='krshna', project='safemrl-2', config=FLAGS, monitor_gym=True)
+wandb.init(sync_tensorboard=True, entity='krshna', project='safemrl-2', config=FLAGS,
+           monitor_gym=True)
 
 
 def gin_bindings_from_config(config):
@@ -60,16 +62,20 @@ def gin_bindings_from_config(config):
   if agent_prefix != 'wcpg_agent.WcpgAgent':
     gin_bindings.append(
         '{}.target_entropy = {}'.format(agent_prefix, config.target_entropy))
+
   gin_bindings.append(
       '{}.reward_scale_factor = {}'.format(agent_prefix, config.reward_scale_factor))
+
   if config.gradient_clipping:
     gin_bindings.append(
       '{}.gradient_clipping = {}'.format(agent_prefix, config.gradient_clipping))
+
   gin_bindings.append(
       '{}.target_update_tau = {}'.format(agent_prefix, config.target_update_tau))
   gin_bindings.append(
     '{}.target_update_period = {}'.format(agent_prefix, config.target_update_period))
   gin_bindings.append('{}.gamma = {}'.format(agent_prefix, config.gamma))
+
   if config.lr and not wandb.run.resumed:  # do not update config if resuming run
     if config.lr < 0:  # HACK: hp.loguniform not working
       config.update(dict(lr=10 ** config.lr), allow_val_change=True)
@@ -79,17 +85,20 @@ def gin_bindings_from_config(config):
       config.update(dict(actor_lr=10**config.actor_lr), allow_val_change=True)
     if config.critic_lr < 0:
       config.update(dict(critic_lr=10**config.critic_lr), allow_val_change=True)
-    if config.entropy_lr < 0:
+    if config.entropy_lr and config.entropy_lr < 0:
       config.update(dict(entropy_lr=10**config.entropy_lr), allow_val_change=True)
+
     if 'Minitaur' in config.env_str and config.friction:
       gin_bindings.append('minitaur.MinitaurGoalVelocityEnv.friction = {}'.format(config.friction))
+    elif 'Cube' in config.env_str and config.drop_penalty:
+      gin_bindings.append('cube_env.SafemrlCubeEnv.drop_penalty = {}'.format(config.drop_penalty))
+
     gin_bindings.append('ac_opt/tf.keras.optimizers.Adam.learning_rate = {}'.format(config.actor_lr))
     gin_bindings.append('cr_opt/tf.keras.optimizers.Adam.learning_rate = {}'.format(config.critic_lr))
-    gin_bindings.append('al_opt/tf.keras.optimizers.Adam.learning_rate = {}'.format(config.entropy_lr))
+    if agent_prefix != 'wcpg_agent.WcpgAgent':
+      gin_bindings.append('al_opt/tf.keras.optimizers.Adam.learning_rate = {}'.format(config.entropy_lr))
 
-  gin_bindings.append('trainer.train_eval.debug_summaries = {}'.format(config.debug_summaries))
-  gin_bindings.append("INITIAL_NUM_STEPS = {}".format(
-    config.initial_collect_steps))
+  gin_bindings.append("INITIAL_NUM_STEPS = {}".format(config.initial_collect_steps))
   gin_bindings.append('ENV_STR = "{}"'.format(config.env_str))
   gin_bindings.append('NUM_STEPS = {}'.format(FLAGS.num_steps))
   gin_bindings.append('LAYER_SIZE = {}'.format(config.layer_size))
@@ -124,7 +133,7 @@ def main(_):
   # tf.config.threading.set_inter_op_parallelism_threads(12)
   trainer.train_eval(config.root_dir, batch_size=config.batch_size, seed=FLAGS.seed,
                      train_metrics_callback=wandb.log, eager_debug=FLAGS.eager_debug,
-                     monitor=FLAGS.monitor)
+                     monitor=FLAGS.monitor, debug_summaries=FLAGS.debug_summaries)
 
 
 if __name__ == '__main__':
