@@ -63,8 +63,8 @@ MAX_LOSS = 1e9
 SAFETY_ENVS = ['IndianWell', 'IndianWell2', 'IndianWell3', 'DrunkSpider', 'pddm_cube',
                'SafemrlCube', 'highway',
                'DrunkSpiderShort', 'MinitaurGoalVelocityEnv', 'MinitaurRandFrictionGoalVelocityEnv']
-SAFETY_AGENTS = [safe_sac_agent.SafeSacAgent, safe_sac_agent.SafeSacAgentOnline]
-ALGOS = {'sac': sac_agent.SacAgent, 'sac_safe': safe_sac_agent.SafeSacAgent,
+SAFETY_AGENTS = [safe_sac_agent.SafeSacAgentOnline]
+ALGOS = {'sac': sac_agent.SacAgent,
          'sac_safe_online': safe_sac_agent.SafeSacAgentOnline,
          'sac_ensemble': ensemble_sac_agent.EnsembleSacAgent,
          'wcpg': wcpg_agent.WcpgAgent}
@@ -100,7 +100,8 @@ def train_eval(
     train_sc_interval=1000,
     online_critic=False,
     n_envs=None,
-    finetune_sc=False,
+    finetune_sc=True,
+    pretraining=True,
     # Ensemble Critic training args
     n_critics=30,
     critic_learning_rate=3e-4,
@@ -111,7 +112,7 @@ def train_eval(
     batch_size=256,
     # Params for eval
     run_eval=False,
-    num_eval_episodes=1,
+    num_eval_episodes=10,
     max_episode_len=500,
     eval_interval=10000,
     eval_metrics_callback=None,
@@ -144,6 +145,8 @@ def train_eval(
   train_metrics = train_metrics or []
   eval_metrics = eval_metrics or []
   sc_metrics = eval_metrics or []
+
+  updating_sc = online_critic and (not load_root_dir or finetune_sc)
 
   if online_critic:
     sc_dir = os.path.join(root_dir, 'sc')
@@ -231,7 +234,8 @@ def train_eval(
           critic_network=critic_net,
           safety_critic_network=safety_critic_net,
           train_step_counter=global_step,
-          debug_summaries=debug_summaries)
+          debug_summaries=debug_summaries,
+          safety_pretraining=pretraining)
     elif agent_class is ensemble_sac_agent.EnsembleSacAgent:
       critic_nets, critic_optimizers = [critic_net], [tf.keras.optimizers.Adam(critic_learning_rate)]
       for _ in range(n_critics-1):
@@ -242,7 +246,7 @@ def train_eval(
         time_step_spec,
         action_spec,
         actor_network=actor_net,
-        critic_network=critic_nets,
+        critic_networks=critic_nets,
         critic_optimizers=critic_optimizers,
         debug_summaries=debug_summaries
       )
@@ -299,7 +303,7 @@ def train_eval(
     else:
       eval_policy = tf_agent.policy
       collect_policy = tf_agent.collect_policy
-      online_collect_policy = tf_agent._safe_policy
+      online_collect_policy = tf_agent._safe_policy if updating_sc else tf_agent.collect_policy
 
     initial_collect_policy = random_tf_policy.RandomTFPolicy(time_step_spec, action_spec)
     if agent_class == wcpg_agent.WcpgAgent:
@@ -328,11 +332,15 @@ def train_eval(
     if load_root_dir:
       load_root_dir = os.path.expanduser(load_root_dir)
       load_train_dir = os.path.join(load_root_dir, 'train')
-      misc.load_pi_ckpt(load_train_dir, tf_agent)  # loads tf_agent
+      load_rb_ckpt_dir = os.path.join(load_train_dir, 'replay_buffer')
+      misc.load_rb_ckpt(load_rb_ckpt_dir, replay_buffer)
+      if online_critic:
+        online_load_rb_ckpt_dir = os.path.join(load_train_dir, 'online_replay_buffer')
+        misc.load_rb_ckpt(online_load_rb_ckpt_dir, online_replay_buffer)
 
     if load_root_dir is None:
       train_checkpointer.initialize_or_restore()
-    rb_checkpointer.initialize_or_restore()
+      rb_checkpointer.initialize_or_restore()
     if agent_class in SAFETY_AGENTS:
       safety_critic_checkpointer.initialize_or_restore()
 
@@ -436,7 +444,7 @@ def train_eval(
           safe_rew = rb_rewards
           safe_rew = tf.gather(safe_rew, tf.squeeze(buf_info.ids), axis=1)
         weights = 1 - safe_rew + safe_rew / tf.reduce_mean(safe_rew + 1e-16)
-        ret = tf_agent.train_sc(experience, safe_rew, metrics=critic_metrics, weights=weights)
+        ret = tf_agent.train_sc(experience, safe_rew, metrics=critic_metrics, weights=weights, training=updating_sc)
         logging.debug('critic train step: {} sec'.format(time.time() - start_time))
         return ret
 
@@ -462,7 +470,7 @@ def train_eval(
       mean_resample_ac = tf.keras.metrics.Mean(name='mean_unsafe_ac_freq')
       # don't fine-tune safety critic
       if (global_step.numpy() == 0 and load_root_dir is None):
-        rb_rewards = misc.process_replay_buffer(online_replay_buffer, as_tensor=True)
+        # rb_rewards = misc.process_replay_buffer(online_replay_buffer, as_tensor=True)
         for _ in range(train_sc_steps):
           sc_loss, lambda_loss = critic_train_step()  # pylint: disable=unused-variable
       tf_agent._safe_policy._safety_threshold = safety_eps
@@ -504,7 +512,7 @@ def train_eval(
           batch_time_step = sc_tf_env.reset()
           batch_policy_state = online_collect_policy.get_initial_state(sc_tf_env.batch_size)
           online_driver.run(time_step=batch_time_step, policy_state=batch_policy_state)
-          rb_rewards = misc.process_replay_buffer(online_replay_buffer, as_tensor=True)
+          # rb_rewards = misc.process_replay_buffer(online_replay_buffer, as_tensor=True)
           for _ in range(train_sc_steps):
             sc_loss, lambda_loss = critic_train_step()  # pylint: disable=unused-variable
 
@@ -605,7 +613,6 @@ def train_eval(
           action, monitor_policy_state = monitor_action.action, monitor_action.state
           monitor_time_step = monitor_py_env.step(action)
           ep_len += 1
-        monitor_py_env.reset()
         logging.debug('saved rollout at timestep {}, rollout length: {}, {} sec'.format(
             global_step_val, ep_len, time.time() - monitor_start))
 

@@ -18,6 +18,11 @@ GOAL_TASKS = {
       'up': [1.5, 0, 0],
       'down': [-1.5, 0, 0],
 
+      'more_left': [0, 0, -2.2],
+      'more_right': [0, 0, 2.2],
+      'more_up': [2.2, 0, 0],
+      'more_down': [-2.2, 0, 0],
+
       'half_up': [0.7, 0, 0],
       'half_down': [-0.7, 0, 0],
       'half_left': [0, 0, -0.7],
@@ -36,7 +41,7 @@ GOAL_TASKS = {
 @gin.configurable
 class SafemrlCubeEnv(cube_env.CubeEnv):
 
-    def __init__(self, same_goals=False, goal_task=('left', 'right', 'up', 'down'),
+    def __init__(self, same_goals=False, goal_task=('more_left', 'more_right', 'more_up', 'more_down'),
                  drop_penalty=-1000., max_steps=100, action_history=7):
       #####################################
       #####################################

@@ -121,7 +121,7 @@ class SafeSacAgent(sac_agent.SacAgent):
         self._target_critic_network_2.variables,
         tau=1.0)
 
-  def train_sc(self, experience, safe_rew, weights=None, metrics=None):
+  def train_sc(self, experience, safe_rew, weights=None, metrics=None, training=True):
     metrics = metrics or self._critic_metrics
     time_steps, actions, next_time_steps = (
         self._experience_to_transitions(experience))
@@ -142,10 +142,11 @@ class SafeSacAgent(sac_agent.SacAgent):
 
       tf.debugging.check_numerics(safety_critic_loss, 'Critic loss is inf or '
                                   'nan.')
-      safety_critic_grads = tape.gradient(safety_critic_loss,
-                                          trainable_safety_variables)
-      self._apply_gradients(safety_critic_grads, trainable_safety_variables,
-                            self._safety_critic_optimizer)
+      if training:
+        safety_critic_grads = tape.gradient(safety_critic_loss,
+                                            trainable_safety_variables)
+        self._apply_gradients(safety_critic_grads, trainable_safety_variables,
+                              self._safety_critic_optimizer)
     return safety_critic_loss
 
   def _experience_to_transitions(self, experience):
@@ -667,7 +668,7 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
           (time_steps, actions, next_time_steps))
     return time_steps, actions, next_time_steps  #, policy_steps.info
 
-  def train_sc(self, experience, safe_rew, weights=None, metrics=None):
+  def train_sc(self, experience, safe_rew, weights=None, metrics=None, training=True):
     """Returns a train op to update the agent's networks.
 
     This method trains with the provided batched experience.
@@ -702,10 +703,11 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
           metrics=metrics)
     tf.debugging.check_numerics(safety_critic_loss, 'Critic loss is inf or '
                                 'nan.')
-    safety_critic_grads = tape.gradient(safety_critic_loss,
-                                        trainable_safety_variables)
-    self._apply_gradients(safety_critic_grads, trainable_safety_variables,
-                          self._safety_critic_optimizer)
+    if training:
+      safety_critic_grads = tape.gradient(safety_critic_loss,
+                                          trainable_safety_variables)
+      self._apply_gradients(safety_critic_grads, trainable_safety_variables,
+                            self._safety_critic_optimizer)
     # update lambda variable
     lambda_variable = [self._log_lambda]
     with tf.GradientTape(watch_accessed_variables=False) as tape:

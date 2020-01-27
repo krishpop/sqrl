@@ -42,7 +42,7 @@ class EnsembleSacAgent(tf_agent.TFAgent):
                alpha_optimizer,
                actor_policy_ctor=actor_policy.ActorPolicy,
                target_critic_networks=None,
-               target_update_tau=1.0,
+               target_update_tau=0.001,
                target_update_period=1,
                td_errors_loss_fn=tf.math.squared_difference,
                gamma=1.0,
@@ -389,7 +389,7 @@ class EnsembleSacAgent(tf_agent.TFAgent):
             target_input, next_time_steps.step_type, training=False)
         target_q_values.append(target_q_values1)
 
-      target_q_values = tf.reduce_min(target_q_values) - tf.exp(self._log_alpha) * next_log_pis
+      target_q_values = tf.reduce_min(target_q_values) # - tf.exp(self._log_alpha) * next_log_pis
 
       td_targets = tf.stop_gradient(
           reward_scale_factor * next_time_steps.reward +
@@ -402,8 +402,8 @@ class EnsembleSacAgent(tf_agent.TFAgent):
         pred_td_targets1, _ = cn(pred_input, time_steps.step_type, training=True)
         pred_td_targets.append(pred_td_targets1)
 
-      critic_loss = 2 * tf.reduce_mean([td_errors_loss_fn(td_targets, pred_td_target)
-                                        for pred_td_target in pred_td_targets], axis=0)
+      critic_loss = tf.reduce_sum([td_errors_loss_fn(td_targets, pred_td_target)
+                                   for pred_td_target in pred_td_targets], axis=0)
 
       if weights is not None:
         critic_loss *= weights

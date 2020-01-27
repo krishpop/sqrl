@@ -6,6 +6,7 @@ import tf_agents.environments.suite_pybullet
 import tf_agents.networks.actor_distribution_network
 
 EP_LEN = 500
+ENV_LOAD_FN = @suite_pybullet.load
 ENV_STR = "MinitaurGoalVelocityEnv-v0"
 ENV_WRAPPERS = [@minitaur.TaskAgnWrapper, @minitaur.CurrentVelWrapper]
 TRAIN_METRICS = [
