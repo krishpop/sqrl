@@ -14,7 +14,8 @@ from absl import logging
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string('root_dir', 'sqrl/cube_rotate/', 'Root directory for writing logs/summaries/checkpoints')
+flags.DEFINE_string('name', None, 'Name for run on wandb')
+flags.DEFINE_string('root_dir', 'sac-sweeps/cube_rotate/', 'Root directory for writing logs/summaries/checkpoints')
 flags.DEFINE_string('load_dir', None, 'Directory for loading pretrained policy')
 flags.DEFINE_string('load_run', None, 'Loads wandb and gin configs from past run')
 flags.DEFINE_string('env_str', 'SafemrlCube-v2', 'Environment string')
@@ -41,15 +42,15 @@ flags.DEFINE_float('initial_log_alpha', 0., 'Initial value for log_alpha')
 flags.DEFINE_float('gamma', 0.99, 'Future reward discount factor')
 flags.DEFINE_float('reward_scale_factor', 1.0, 'Reward scale factor for SacAgent')
 flags.DEFINE_float('gradient_clipping', 2., 'Gradient clipping factor for SacAgent')
-flags.DEFINE_multi_string('gin_files', ['sac_safe_online.gin', 'cube_default.gin'],
+flags.DEFINE_multi_string('gin_files', ['sac.gin', 'cube_default.gin'],
                           'gin files to load')
 flags.DEFINE_boolean('debug_summaries', False, 'Debug summaries for critic and actor')
 flags.DEFINE_boolean('debug', False, 'Debug logging')
 flags.DEFINE_boolean('eager_debug', False, 'Debug in eager mode if True')
 flags.DEFINE_integer('seed', None, 'Seed to seed envs and algorithm with')
 
-wandb.init(sync_tensorboard=True, entity='krshna', project='safemrl-2', config=FLAGS,
-           monitor_gym=True)
+#wandb.init(sync_tensorboard=True, entity='krshna', project='safemrl-2', config=FLAGS,
+#           monitor_gym=True)
 
 # blacklist of config values to update with a loaded run config
 RUN_CONFIG_BLACKLIST = {'safety_gamma', 'target_safety', 'friction', 'drop_penalty',
@@ -126,6 +127,8 @@ def wandb_log_callback(summaries, step=None):
 
 def main(_):
   logging.set_verbosity(logging.INFO)
+  wandb.init(name=FLAGS.name, sync_tensorboard=True, entity='krshna', project='safemrl-2', config=FLAGS,
+             monitor_gym=True)
   if FLAGS.debug:
     logging.set_verbosity(logging.DEBUG)
   if os.environ.get('CONFIG_DIR'):
@@ -142,8 +145,8 @@ def main(_):
     config.update(dict(num_steps=FLAGS.num_steps), allow_val_change=True)
   gin_bindings = []
   if FLAGS.load_run:
-    api = wandb.Api(overrides=dict(entity='krshna'))
-    run = api.run(path='safemrl-2/{}'.format(FLAGS.load_run))
+    api = wandb.Api(overrides=dict(entity='krshna', project='safemrl-2'))
+    run = api.run(path=FLAGS.load_run)
     op_config = os.path.join(run.config['root_dir'], 'train/operative_config-0.gin')
     config.update(dict(gin_files=[op_config]), allow_val_change=True)
     config.update({k: run.config[k] for k in run.config if k not in RUN_CONFIG_BLACKLIST}, allow_val_change=True)
