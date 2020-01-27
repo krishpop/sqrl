@@ -536,7 +536,7 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
     self._resample_counter = resample_counter
 
   def _apply_actor_network(self, time_step, policy_state):
-    has_batch_dim = time_step.step_type.shape.as_list()[0] > 1
+    has_batch_dim = time_step.step_type.shape.as_list()[0] is None or time_step.step_type.shape.as_list()[0] > 1
     observation = time_step.observation
     if self._observation_normalizer:
       observation = self._observation_normalizer.normalize(observation)

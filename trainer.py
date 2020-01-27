@@ -332,11 +332,12 @@ def train_eval(
     if load_root_dir:
       load_root_dir = os.path.expanduser(load_root_dir)
       load_train_dir = os.path.join(load_root_dir, 'train')
-      load_rb_ckpt_dir = os.path.join(load_train_dir, 'replay_buffer')
-      misc.load_rb_ckpt(load_rb_ckpt_dir, replay_buffer)
-      if online_critic:
-        online_load_rb_ckpt_dir = os.path.join(load_train_dir, 'online_replay_buffer')
-        misc.load_rb_ckpt(online_load_rb_ckpt_dir, online_replay_buffer)
+      misc.load_agent_ckpt(load_train_dir, tf_agent)
+      # load_rb_ckpt_dir = os.path.join(load_train_dir, 'replay_buffer')
+      # misc.load_rb_ckpt(load_rb_ckpt_dir, replay_buffer)
+      # if online_critic:
+      #   online_load_rb_ckpt_dir = os.path.join(load_train_dir, 'online_replay_buffer')
+      #   misc.load_rb_ckpt(online_load_rb_ckpt_dir, online_replay_buffer)
 
     if load_root_dir is None:
       train_checkpointer.initialize_or_restore()

@@ -53,7 +53,7 @@ wandb.init(sync_tensorboard=True, entity='krshna', project='safemrl-2', config=F
 
 # blacklist of config values to update with a loaded run config
 RUN_CONFIG_BLACKLIST = {'safety_gamma', 'target_safety', 'friction', 'drop_penalty',
-                        'target_entropy', 'env_str'}
+                        'target_entropy', 'env_str', 'root_dir', 'num_steps', 'finetune'}
 
 
 def gin_bindings_from_config(config):
@@ -113,7 +113,7 @@ def gin_bindings_from_config(config):
   gin_bindings.append("INITIAL_NUM_STEPS = {}".format(config.initial_collect_steps))
   gin_bindings.append('ENV_STR = "{}"'.format(config.env_str))
   # HACK, to prevent num_steps being overwritten during loading/resuming a previous run.
-  gin_bindings.append('NUM_STEPS = {}'.format(FLAGS.num_steps))
+  gin_bindings.append('NUM_STEPS = {}'.format(config.num_steps))
   gin_bindings.append('LAYER_SIZE = {}'.format(config.layer_size))
   return gin_bindings
 
@@ -133,28 +133,25 @@ def main(_):
   config = wandb.config
   if not wandb.run.resumed:  # do not make changes
     root_path = []
-    if os.environ.get('EXP_DIR'):
-      root_path.append(os.environ.get('EXP_DIR'))
+    exp_dir = os.environ.get('EXP_DIR')
+    if exp_dir and exp_dir not in FLAGS.root_dir and not osp.exists(FLAGS.root_dir):
+      root_path.append(exp_dir)
     root_path.append(FLAGS.root_dir)
     root_path.append(str(os.environ.get('WANDB_RUN_ID', 0)))
     config.update(dict(root_dir=osp.join(*root_path)), allow_val_change=True)
-  else:
     config.update(dict(num_steps=FLAGS.num_steps), allow_val_change=True)
   gin_bindings = []
   if FLAGS.load_run:
     api = wandb.Api(overrides=dict(entity='krshna'))
     run = api.run(path='safemrl-2/{}'.format(FLAGS.load_run))
     op_config = os.path.join(run.config['root_dir'], 'train/operative_config-0.gin')
-    run.config['root_dir'] = config.root_dir
+    config.update(dict(gin_files=[op_config]), allow_val_change=True)
+    config.update({k: run.config[k] for k in run.config if k not in RUN_CONFIG_BLACKLIST}, allow_val_change=True)
     if 'Cube' in config.env_str and config.finetune:
       # If fine-tuning, make task more difficult
       gin_bindings.append("cube_env.SafemrlCubeEnv.goal_task = ('more_left', 'more_right', 'more_up', 'more_down')")
-    config.update({run.config[k] for k in run.config if k not in RUN_CONFIG_BLACKLIST}, allow_val_change=True)
-    config.update({'gin_files': [op_config]})
-  else:
-    gin_files = config.gin_files
-    gin_bindings += gin_bindings_from_config(config)
-    gin.parse_config_files_and_bindings(gin_files, gin_bindings)
+  gin_bindings += gin_bindings_from_config(config)
+  gin.parse_config_files_and_bindings(config.gin_files, gin_bindings)
   # tf.config.threading.set_inter_op_parallelism_threads(12)
   trainer.train_eval(config.root_dir, load_root_dir=FLAGS.load_dir, batch_size=config.batch_size, seed=FLAGS.seed,
                      train_metrics_callback=wandb.log, eager_debug=FLAGS.eager_debug,
