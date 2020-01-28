@@ -1,0 +1,27 @@
+name: threshold_sweep
+program: run_experiment.py
+method: bayes
+metric:
+  name: AverageScore
+  goal: max
+early_terminate:
+  type: hyperband
+  min_iter: 1000
+parameters:
+  safety_gamma:
+    distribution: q_uniform
+    min: 0.6
+    max: 0.9
+    q: 0.05
+  target_safety:
+    distribution: q_uniform
+    min: 0.05
+    max: 0.2
+    q: 0.025
+  target_entropy:
+    distribution: categorical
+    values: [-192, -96, -24, -12, -6] 
+  load_run:
+    value: "safemrl-2/oe6c3je4"
+  load_dir:
+    value: "~/tfagents/sqrl/cube_rotate/oe6c3je4"

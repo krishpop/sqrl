@@ -1,0 +1,47 @@
+program: run_experiment.py
+tune:
+  _wandb:
+    seed: 3572357287
+    versions:
+      hyperopt: 0.2.1
+      tune: 0.7.6
+      wandb: 0.8.21
+  num_samples: 20
+  run_or_experiment: run_experiment.py
+  search_alg:
+    hyperopt.HyperOptSearch:
+      max_concurrent: 4
+      metric: AverageReturn
+      mode: max
+      points_to_evaluate:
+      - actor_lr: 0.0003
+        critic_lr: 0.0001
+        reward_scale_factor: 0.3
+      space:
+        actor_lr:
+          hyperopt.hp.uniform:
+          - actor_lr
+          - -5
+          - -4
+        critic_lr:
+          hyperopt.hp.uniform:
+          - critic_lr
+          - -4
+          - -3
+        gradient_clipping:
+          hyperopt.hp.uniform:
+          - gradient_clipping
+          - 0.0
+          - 4.0
+        layer_size:
+          hyperopt.hp.choice:
+          - layer_size
+          - - 32
+            - 64
+            - 128
+            - 256
+        reward_scale_factor:
+          hyperopt.hp.uniform:
+          - reward_scale_factor
+          - 0.1
+          - 2

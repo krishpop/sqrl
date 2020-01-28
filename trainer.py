@@ -146,7 +146,7 @@ def train_eval(
   eval_metrics = eval_metrics or []
   sc_metrics = eval_metrics or []
 
-  updating_sc = online_critic and (not load_root_dir or finetune_sc)
+  updating_sc = True #online_critic and (not load_root_dir or finetune_sc)
 
   if online_critic:
     sc_dir = os.path.join(root_dir, 'sc')

@@ -15,13 +15,14 @@ from absl import logging
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string('name', None, 'Name for run on wandb')
-flags.DEFINE_string('root_dir', 'sac-sweeps/cube_rotate/', 'Root directory for writing logs/summaries/checkpoints')
+flags.DEFINE_string('root_dir', 'sqrl-ts-sweeps/cube_rotate/', 'Root directory for writing logs/summaries/checkpoints')
 flags.DEFINE_string('load_dir', None, 'Directory for loading pretrained policy')
 flags.DEFINE_string('load_run', None, 'Loads wandb and gin configs from past run')
+flags.DEFINE_boolean('load_config', False, 'whether or not to load config with run')
 flags.DEFINE_string('env_str', 'SafemrlCube-v2', 'Environment string')
 flags.DEFINE_boolean('monitor', False, 'load environments with Monitor wrapper')
-flags.DEFINE_boolean('finetune', False, 'Fine-tuning task safety')
-flags.DEFINE_integer('num_steps', int(1e6), 'Number of training steps')
+flags.DEFINE_boolean('finetune', True, 'Fine-tuning task safety')
+flags.DEFINE_integer('num_steps', int(1.5e6), 'Number of training steps')
 flags.DEFINE_integer('layer_size', 256, 'Number of training steps')
 flags.DEFINE_integer('batch_size', 256, 'batch size used for training')
 flags.DEFINE_float('safety_gamma', 0.7, 'Safety discount term used for TD backups')
@@ -41,7 +42,7 @@ flags.DEFINE_integer('initial_collect_steps', 2000, 'Number of steps to collect 
 flags.DEFINE_float('initial_log_alpha', 0., 'Initial value for log_alpha')
 flags.DEFINE_float('gamma', 0.99, 'Future reward discount factor')
 flags.DEFINE_float('reward_scale_factor', 1.0, 'Reward scale factor for SacAgent')
-flags.DEFINE_float('gradient_clipping', 2., 'Gradient clipping factor for SacAgent')
+flags.DEFINE_float('gradient_clipping', 1., 'Gradient clipping factor for SacAgent')
 flags.DEFINE_multi_string('gin_files', ['sac.gin', 'cube_default.gin'],
                           'gin files to load')
 flags.DEFINE_boolean('debug_summaries', False, 'Debug summaries for critic and actor')
@@ -147,9 +148,12 @@ def main(_):
   if FLAGS.load_run:
     api = wandb.Api(overrides=dict(entity='krshna', project='safemrl-2'))
     run = api.run(path=FLAGS.load_run)
-    op_config = os.path.join(run.config['root_dir'], 'train/operative_config-0.gin')
-    config.update(dict(gin_files=[op_config]), allow_val_change=True)
-    config.update({k: run.config[k] for k in run.config if k not in RUN_CONFIG_BLACKLIST}, allow_val_change=True)
+    exp_dir = os.environ.get('EXP_DIR')
+    root_dir = run.config['root_dir'].split('tfagents/')[1]
+    op_config = os.path.join(exp_dir, root_dir, 'train/operative_config-0.gin')
+    config.update(dict(gin_files=run.config['gin_files'] + [op_config]), allow_val_change=True)
+    if config.load_config:
+      config.update({k: run.config[k] for k in run.config if k not in RUN_CONFIG_BLACKLIST}, allow_val_change=True)
     if 'Cube' in config.env_str and config.finetune:
       # If fine-tuning, make task more difficult
       gin_bindings.append("cube_env.SafemrlCubeEnv.goal_task = ('more_left', 'more_right', 'more_up', 'more_down')")
