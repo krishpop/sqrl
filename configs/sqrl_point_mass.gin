@@ -26,9 +26,9 @@ safe_sac_agent.SafeSacAgentOnline.safety_gamma = 0.4
 point_mass.PointMassEnv.action_scale = 0.5
 point_mass.PointMassEnv.action_noise = 0.1
 
-point_mass.TimeLimitBonus.early_term_penalty = 1.
-point_mass.TimeLimitBonus.early_term_bonus = 0.
-point_mass.TimeLimitBonus.time_limit_penalty = -%EP_LEN
+point_mass.TimeLimitBonus.early_term_penalty = 5.
+point_mass.TimeLimitBonus.early_term_bonus = 5.
+# point_mass.TimeLimitBonus.time_limit_penalty = %EP_LEN
 
 # point_mass.GoalConditionedPointWrapper.fall_penalty = -3.
 point_mass.GoalConditionedPointWrapper.task_rew_type = "+l2"

@@ -149,7 +149,7 @@ def record_point_mass_episode(tf_env, tf_policy, step=None, log_key='trajectory'
   env = tf_env.pyenv.envs[0]
 
   walls = env.walls.copy().astype(float)
-  h, w = walls.shape
+  w, h = walls.shape
   start = env.unwrapped._start.astype(int)
   goal = env._goal
   walls[np.where(env.walls == 0)], walls[np.where(env.walls == 1)] = .5, 0.0
@@ -157,12 +157,12 @@ def record_point_mass_episode(tf_env, tf_policy, step=None, log_key='trajectory'
   walls[tuple(start)] = .65
 
   f, ax = plt.subplots(figsize=(w * .8, h * .8))
-  ax.matshow(walls.T, cmap=plt.cm.RdBu, vmin=0, vmax=1)
-  u1, v1 = (states[1:, 0] - states[:-1, 0]) * .35, (states[:-1, 1] - states[1:, 1]) * .35
-  ax.quiver(states[:-1, 0], states[:-1, 1], u1, v1, color='g',
+  ax.matshow(walls, cmap=plt.cm.RdBu, vmin=0, vmax=1)
+  u1, v1 = (states[1:, 1] - states[:-1, 1]) * .35, (states[:-1, 0] - states[1:, 0]) * .35
+  ax.quiver(states[:-1, 1], states[:-1, 0], u1, v1, color='g',
              scale=.5, scale_units='x', minlength=min(np.abs(u1) + np.abs(v1)),
              headlength=3, headaxislength=2.5)
-  plt.scatter(states[:, 0], states[:, 1])
+  plt.scatter(states[:, 1], states[:, 0])
   ax.set_axis_off()
   wandb.log({log_key: wandb.Image(f)}, step=step)
   plt.close(f)

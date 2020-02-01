@@ -414,7 +414,7 @@ class GoalConditionedPointWrapper(gym.Wrapper):
       task_rew += -.1
 
     if self.is_done(state, goal) and not obs['fallen']:
-      task_rew = 40.
+      task_rew = 1.
       done = True
     elif obs['fallen']:  # if fallen into well
       done = True if self._reset_on_fall else False
@@ -466,7 +466,7 @@ class TimeLimitBonus(wrappers.PyEnvironmentBaseWrapper):
   """End episodes after specified steps, adding early bonus/penalty."""
 
   def __init__(self, env, duration, early_term_bonus=1., early_term_penalty=1.,
-               time_limit_penalty=-2.):
+               time_limit_penalty=-30.):
     super(TimeLimitBonus, self).__init__(env)
     self._duration = duration
     self._num_steps = None

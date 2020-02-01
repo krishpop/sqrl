@@ -33,6 +33,7 @@ import tensorflow_probability as tfp
 from absl import logging
 from tf_agents.agents import tf_agent
 from tf_agents.agents.sac import sac_agent
+from tf_agents.networks import utils
 from tf_agents.policies import actor_policy
 from tf_agents.trajectories import trajectory
 from tf_agents.utils import common
@@ -588,7 +589,7 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
                debug_summaries=False,
                summarize_grads_and_vars=False,
                train_step_counter=None,
-               safety_pretraining=False,
+               safety_pretraining=True,
                resample_counter=None,
                name=None):
     self._safety_critic_network = safety_critic_network
@@ -872,11 +873,23 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
     """Get actions and corresponding log probabilities from policy."""
     # Get raw action distribution from policy, and initialize bijectors list.
     batch_size = nest_utils.get_outer_shape(time_steps, self.time_step_spec)[0]
-    policy_state = self.policy.get_initial_state(batch_size)
     if self._safety_pretraining:
+      policy_state = self.policy.get_initial_state(batch_size)
       action_distribution = self.policy.distribution(
           time_steps, policy_state=policy_state).action
     else:
+      # n = 30
+      # policy_state = self._safe_policy.get_initial_state(batch_size)
+      # action_distribution, _ = self._actor_network(time_steps.observation, self._time_step.step_type, policy_type,
+      #                                              training=True)
+      # sampled_ac = tf.nest.map_structure(lambda d: d.sample(n), action_distribution)
+      # ac_outer_rank = nest_utils.get_outer_rank(sampled_ac, self.action_spec)
+      # ac_batch_squash = utils.BatchSquash(ac_outer_rank)
+      # sampled_ac_prob = common.log_probability(action_distribution, actions)
+      # tf.reduce_mean(sampled_ac_prob, axis=0)
+      # sampled_ac = tf.nest.map_structure(ac_batch_squash.flatten, sampled_ac)
+      # self._safety_critic_network((obs, sampled_ac), time_step.step_type)
+      policy_state = self._safe_policy.get_initial_state(batch_size)
       action_distribution = self._safe_policy.distribution(
           time_steps, policy_state=policy_state).action
     # Sample actions and log_pis from transformed distribution.
@@ -990,10 +1003,10 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
       next_actions, next_log_pis = self._actions_and_log_probs(next_time_steps)
       target_input_1 = (next_time_steps.observation, next_actions)
       target_q_values1, unused_network_state1 = self._target_critic_network_1(
-          target_input_1, next_time_steps.step_type)
+          target_input_1, next_time_steps.step_type, training=False)
       target_input_2 = (next_time_steps.observation, next_actions)
       target_q_values2, unused_network_state2 = self._target_critic_network_2(
-          target_input_2, next_time_steps.step_type)
+          target_input_2, next_time_steps.step_type, training=False)
       target_q_values = (
           tf.minimum(target_q_values1, target_q_values2) -
           tf.exp(self._log_alpha) * next_log_pis)
@@ -1004,9 +1017,9 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
 
       pred_input = (time_steps.observation, actions)
       pred_td_targets1, unused_network_state1 = self._critic_network_1(
-          pred_input, time_steps.step_type)
+          pred_input, time_steps.step_type, training=True)
       pred_td_targets2, unused_network_state2 = self._critic_network_2(
-          pred_input, time_steps.step_type)
+          pred_input, time_steps.step_type, training=True)
       critic_loss1 = td_errors_loss_fn(td_targets, pred_td_targets1)
       critic_loss2 = td_errors_loss_fn(td_targets, pred_td_targets2)
       critic_loss = critic_loss1 + critic_loss2
@@ -1048,20 +1061,18 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
 
       actions, log_pi = self._actions_and_log_probs(time_steps)
       target_input_1 = (time_steps.observation, actions)
-      target_q_values1, unused_network_state1 = self._critic_network_1(
-          target_input_1, time_steps.step_type)
+      target_q_values1, _ = self._critic_network_1(target_input_1, time_steps.step_type, training=False)
       target_input_2 = (time_steps.observation, actions)
-      target_q_values2, unused_network_state2 = self._critic_network_2(
-          target_input_2, time_steps.step_type)
+      target_q_values2, _ = self._critic_network_2(target_input_2, time_steps.step_type, training=False)
       target_q_values = tf.minimum(target_q_values1, target_q_values2)
       if not self._safety_pretraining:
         pred_input = (time_steps.observation, actions)
-        q_val, unused_network_state1 = self._safety_critic_network(
-            pred_input, time_steps.step_type)
+        q_val, _ = self._safety_critic_network(
+          pred_input, time_steps.step_type)
         q_safe = tf.nn.sigmoid(q_val)  # rates safety of current actions
         actor_loss = (
-            tf.exp(self._log_alpha) * log_pi - target_q_values +
-            tf.exp(self._log_lambda) * (q_safe - self._target_safety))
+                tf.exp(self._log_alpha) * log_pi - target_q_values +
+                tf.exp(self._log_lambda) * (self._target_safety - q_safe))
       else:
         actor_loss = tf.exp(self._log_alpha) * log_pi - target_q_values
       if weights is not None:
@@ -1076,9 +1087,9 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
         common.generate_tensor_summaries('log_pi', log_pi,
                                          self.train_step_counter)
         tf.compat.v2.summary.scalar(
-            name='entropy_avg',
-            data=-tf.reduce_mean(input_tensor=log_pi),
-            step=self.train_step_counter)
+          name='entropy_avg',
+          data=-tf.reduce_mean(input_tensor=log_pi),
+          step=self.train_step_counter)
         common.generate_tensor_summaries('target_q_values', target_q_values,
                                          self.train_step_counter)
         batch_size = nest_utils.get_outer_shape(time_steps,
