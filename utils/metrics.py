@@ -70,6 +70,7 @@ class AverageEarlyFailureMetric(py_metrics.StreamingMetric):
     episode_steps[is_last] = 0
 
 
+# TODO: add max episode length to these metrics
 @gin.configurable
 class AverageFallenMetric(py_metrics.StreamingMetric):
   """Computes average fallen rate for PointMass envs in buffer_size episodes."""
@@ -128,7 +129,7 @@ class AverageSuccessMetric(py_metrics.StreamingMetric):
     if len(is_last[0]) > 0:
       succ = np.logical_and(
           np.logical_not(trajectory.observation['fallen'][is_last]),
-          trajectory.reward[is_last] > 0.)
+          trajectory.reward[is_last] > 1.)
       self.add_to_buffer(succ)
 
 

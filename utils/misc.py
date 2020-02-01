@@ -31,6 +31,7 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 import gin
 import numpy as np
+import wandb
 import functools
 
 from gym.wrappers import Monitor
@@ -98,18 +99,18 @@ def copy_rb(rb_s, rb_t):
   return rb_t
 
 
-def load_pi_ckpt(ckpt_dir, agent):
-  train_checkpointer = common.Checkpointer(
-      ckpt_dir=ckpt_dir, max_to_keep=1, agent=agent)
-  train_checkpointer.initialize_or_restore().assert_existing_objects_matched()
-  return agent.policy
+def load_pi_ckpt(ckpt_dir, policy):
+  policy_checkpointer = common.Checkpointer(
+      ckpt_dir=ckpt_dir, max_to_keep=1, policy=policy)
+  policy_checkpointer.initialize_or_restore().assert_existing_objects_matched()
+  return policy
 
 
-def load_policies(agent, base_path, independent_runs):
+def load_policies(policy, base_path, independent_runs):
   pi_loaded = []
   for run in independent_runs:
-    pi_ckpt_path = osp.join(base_path, run, 'train/policies/')
-    pi_loaded.append(load_pi_ckpt(pi_ckpt_path, agent))
+    pi_ckpt_path = osp.join(base_path, run, 'train/policy/')
+    pi_loaded.append(load_pi_ckpt(pi_ckpt_path, policy))
   return pi_loaded
 
 
@@ -128,10 +129,10 @@ def create_default_writer_and_save_dir(root_dir):
   return writer, save_dir
 
 
-def record_point_mass_episode(tf_env, tf_policy, savepath=None):
+def record_point_mass_episode(tf_env, tf_policy, step=None, log_key='trajectory'):
   """Records summaries."""
   time_step = tf_env.reset()
-  policy_state = tf_policy.get_initial_state()
+  policy_state = tf_policy.get_initial_state(1)
   states, actions = [], []
   while not time_step.is_last():
     action_step = tf_policy.action(time_step, policy_state)
@@ -142,19 +143,30 @@ def record_point_mass_episode(tf_env, tf_policy, savepath=None):
     policy_state = action_step.state
     time_step = tf_env.step(action_step.action)
 
-  wall_mat = tf_env._env.envs[0].walls.copy()  # pylint: disable=protected-access
-  gx, gy = tf_env._env.envs[0]._goal  # pylint: disable=protected-access
-  wall_mat[gx, gy] = 3
-  w, h = wall_mat.shape
-  f, ax = plt.subplots(figsize=(w * .8, h * .8))
-  ax.matshow(wall_mat)
-  ax.plot(states, c='r')
-  ax.set_xticks([])
-  ax.set_yticks([])
-  if savepath:
-    f.savefig(savepath)
-    f.close()
+  s = time_step.observation['observation'].numpy()[0]
+  states.append(s)
+  states = np.array(states)
+  env = tf_env.pyenv.envs[0]
 
+  walls = env.walls.copy().astype(float)
+  h, w = walls.shape
+  start = env.unwrapped._start.astype(int)
+  goal = env._goal
+  walls[np.where(env.walls == 0)], walls[np.where(env.walls == 1)] = .5, 0.0
+  walls[tuple(goal)] = .76
+  walls[tuple(start)] = .65
+
+  f, ax = plt.subplots(figsize=(w * .8, h * .8))
+  ax.matshow(walls.T, cmap=plt.cm.RdBu, vmin=0, vmax=1)
+  u1, v1 = (states[1:, 0] - states[:-1, 0]) * .35, (states[:-1, 1] - states[1:, 1]) * .35
+  ax.quiver(states[:-1, 0], states[:-1, 1], u1, v1, color='g',
+             scale=.5, scale_units='x', minlength=min(np.abs(u1) + np.abs(v1)),
+             headlength=3, headaxislength=2.5)
+  plt.scatter(states[:, 0], states[:, 1])
+  ax.set_axis_off()
+  wandb.log({log_key: wandb.Image(f)}, step=step)
+  plt.close(f)
+  return f
 
 def process_replay_buffer(replay_buffer, max_ep_len=500, k=1, as_tensor=True):
   """Process replay buffer to infer safety rewards with episode boundaries."""

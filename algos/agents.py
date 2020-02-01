@@ -52,14 +52,27 @@ tfd = tfp.distributions
 def normal_projection_net(action_spec,
                           init_action_stddev=0.35,
                           init_means_output_factor=0.1,
+                          state_dependent_std=True,
+                          mean_transform=None,
                           scale_distribution=True):
   del init_action_stddev
+  # std_bias_initializer_value = round(np.log(init_action_stddev + 1e-10), 3)
   return normal_projection_network.NormalProjectionNetwork(
       action_spec,
-      state_dependent_std=True,
+      state_dependent_std=state_dependent_std,
+      mean_transform=mean_transform,
       init_means_output_factor=init_means_output_factor,
+      # std_bias_initializer_value=std_bias_initializer_value,
+      # std_transform=std_clip_transform,
       std_transform=sac_agent.std_clip_transform,
       scale_distribution=scale_distribution)
+
+
+@gin.configurable
+def std_clip_transform(stddevs):
+  stddevs = tf.nest.map_structure(lambda t: tf.clip_by_value(t, -20, 2),
+                                  stddevs)
+  return tf.exp(stddevs)
 
 
 @gin.configurable
@@ -261,7 +274,7 @@ class CriticNetwork(network.Network):
 def _critic_normal_projection_net(output_spec,
                                   init_stddev=0.35,
                                   init_means_output_factor=0.01):
-  std_bias_initializer_value = np.log(np.exp(init_stddev) - 1)
+  std_bias_initializer_value = round(np.log(init_action_stddev + 1e-10), 3)
 
   return normal_projection_network.NormalProjectionNetwork(
       output_spec,
@@ -473,8 +486,8 @@ class WcpgPolicyWrapper(tf_policy.Base):
   def _action(self, time_step, policy_state, seed):
     if time_step.is_first():
       self._alpha = None
-    action_step = self._wrapped_policy.action(time_step, policy_state, seed)
-    return action_step._replace(info=WcpgPolicyInfo(alpha=self.alpha))
+    policy_step = self._wrapped_policy.action(time_step, policy_state, seed)
+    return policy_step._replace(info=WcpgPolicyInfo(alpha=self.alpha))
 
 
 class GaussianNoisePolicy(tf_policy.Base):
@@ -526,6 +539,8 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
                observation_normalizer=None,
                clip=True,
                resample_counter=None,
+               resample_n=50,
+               resample_k=5,
                training=False,
                name=None):
     super(SafeActorPolicyRSVar,
@@ -534,6 +549,8 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
     self._safety_critic_network = safety_critic_network
     self._safety_threshold = safety_threshold
     self._resample_counter = resample_counter
+    self._n = resample_n
+    self._k = resample_k
 
   def _apply_actor_network(self, time_step, policy_state):
     has_batch_dim = time_step.step_type.shape.as_list()[0] is None or time_step.step_type.shape.as_list()[0] > 1
@@ -544,27 +561,29 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
                                                 time_step.step_type,
                                                 policy_state,
                                                 training=self._training)
-    if has_batch_dim:
+    if has_batch_dim or self._training:  # returns normal actions, unmasked, when not training
       return actions, policy_state
 
     # samples "best" safe action out of 50
-    sampled_ac = actions.sample(50)
+    n, k = self._n, self._k
+    sampled_ac = actions.sample(n)
     obs = nest_utils.stack_nested_tensors(
-        [time_step.observation for _ in range(50)])
+        [time_step.observation for _ in range(n)])
+
     obs_outer_rank = nest_utils.get_outer_rank(obs, self.time_step_spec.observation)
     ac_outer_rank = nest_utils.get_outer_rank(sampled_ac, self.action_spec)
     obs_batch_squash = utils.BatchSquash(obs_outer_rank)
     ac_batch_squash = utils.BatchSquash(ac_outer_rank)
     obs = tf.nest.map_structure(obs_batch_squash.flatten, obs)
     sampled_ac = tf.nest.map_structure(ac_batch_squash.flatten, sampled_ac)
+
     q_val, _ = self._safety_critic_network((obs, sampled_ac),
                                            time_step.step_type)
     fail_prob = tf.nn.sigmoid(q_val)
-    safe_ac_mask = fail_prob < self._safety_threshold
-    safe_ac_idx = tf.where(safe_ac_mask)
+    safe_ac_idx = tf.where(fail_prob < self._safety_threshold)
 
     resample_count = 0
-    while self._training and resample_count < 4 and not safe_ac_idx.shape.as_list()[0]:
+    while self._training and resample_count < k and not safe_ac_idx.shape.as_list()[0]:
       if self._resample_counter is not None:
         self._resample_counter()
       resample_count += 1
@@ -576,7 +595,7 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
         ac_mean = actions.mean()
       actions = self._actor_network.output_spec.build_distribution(
           loc=ac_mean, scale=scale)
-      sampled_ac = actions.sample(50)
+      sampled_ac = actions.sample(n)
       sampled_ac = tf.nest.map_structure(ac_batch_squash.flatten, sampled_ac)
       q_val, _ = self._safety_critic_network((obs, sampled_ac),
                                              time_step.step_type)
@@ -585,15 +604,19 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
       safe_ac_idx = tf.where(fail_prob < self._safety_threshold)
     # logging.debug('resampled {} times, {} seconds'.format(resample_count, time.time() - start_time))
     sampled_ac = ac_batch_squash.unflatten(sampled_ac)
-    if None in safe_ac_idx.shape.as_list() or not np.prod(safe_ac_idx.shape.as_list()):  # return safest action
-      safe_idx = tf.argmin(fail_prob)
+    if None in safe_ac_idx.shape.as_list() or not np.prod(safe_ac_idx.shape.as_list()):
+      safe_idx = tf.argmin(fail_prob)  # return action closest to fail prob eps
     else:
       sampled_ac = tf.gather(sampled_ac, safe_ac_idx)
-      fail_prob_safe = tf.gather(fail_prob, safe_ac_idx)
+      fail_prob_safe = tf.gather(fail_prob, tf.squeeze(safe_ac_idx))
       if self._training:
-        safe_idx = tf.argmax(fail_prob_safe)[0]  # picks most unsafe action out of "safe" options
+        safe_idx = tf.argmax(fail_prob_safe)  # picks most unsafe action out of "safe" options
       else:
-        safe_idx = tf.argmin(fail_prob_safe)[0]
+        # picks random safe_action
+        log_prob = common.log_probability(actions, sampled_ac, self.action_spec)
+        safe_idx = tfp.distributions.Categorical(log_prob).sample()
+        safe_idx = tf.reshape(safe_idx, [-1])[0]
+        # safe_idx = tf.argmin(fail_prob_safe)[0]  # picks the safest action
     ac = sampled_ac[safe_idx]
     assert ac.shape.as_list()[0] == 1, 'action shape is not correct: {}'.format(ac.shape.as_list())
     return ac, policy_state

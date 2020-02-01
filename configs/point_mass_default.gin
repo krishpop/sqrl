@@ -9,29 +9,29 @@ import tf_agents.networks.actor_distribution_network
 ENV_STR = 'DrunkSpiderShort'
 ENV_LOAD_FN= @point_mass.env_load_fn
 EP_LEN = 50
+ENV_WRAPPERS = []
+NUM_STEPS = 500000
 
 TRAIN_METRICS = [
     @metrics.AverageSuccessMetric(),
     @metrics.AverageFallenMetric()
 ]
-eval_success/singleton.constructor = @metrics.AverageSuccessMetric
-eval_fallen/singleton.constructor = @metrics.AverageFallenMetric
 
-EVAL_METRICS = [@eval_success/singleton(), @eval_fallen/singleton()]
-eval_success/singleton.constructor.batch_size = %NUM_ENVS
-eval_fallen/singleton.constructor.batch_size = %NUM_ENVS
+EVAL_METRICS = [
+    @eval_success/metrics.AverageSuccessMetric(),
+    @eval_fallen/metrics.AverageFallenMetric()
+]
+eval_success/metrics.AverageSuccessMetric.batch_size = %NUM_ENVS
+eval_fallen/metrics.AverageFallenMetric.batch_size = %NUM_ENVS
 
+ENV_METRIC_FACTORIES = []
+
+point_mass.env_load_fn.max_episode_steps = %EP_LEN
 metrics.AverageSuccessMetric.buffer_size = 30
 metrics.AverageSuccessMetric.buffer_size = 30
 
-point_mass.env_load_fn.env_kwargs = {'action_noise':0.1, 'start':(0, 3)}
-point_mass.env_load_fn.goal_env_kwargs = {'goal':(7, 3), 'task_rew_type':'l2',
-                                          'goal_bounds':[(6, 2), (7, 4)]}
-
-safe_dynamic_episode_driver.SafeDynamicEpisodeDriver.ep_history_unsafe = 2
-
 point_mass.PointMassAcScaleEnv.domain_rand = True
-point_mass.PointMassAcScaleEnv.domain_rand = True
+point_mass.PointMassAcNoiseEnv.domain_rand = True
 
 actor_distribution_network.ActorDistributionNetwork.preprocessing_combiner = (
     @misc.extract_observation_layer()

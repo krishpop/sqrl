@@ -1,0 +1,34 @@
+import gin.tf.external_configurables
+import tensorflow
+import tf_agents.environments.suite_pybullet
+import tf_agents.agents.ddpg.critic_network
+import tf_agents.networks.actor_distribution_network
+
+import safemrl.trainer
+import safemrl.algos.ensemble_sac_agent
+
+include 'sac_safe_online.gin'
+include 'point_mass_default.gin'
+
+EP_LEN = 30
+INITIAL_NUM_STEPS = 500
+NUM_STEPS = 100000
+
+agents.normal_projection_net.init_means_output_factor = 0.1
+# agents.normal_projection_net.init_action_stddev = 0.35
+agents.normal_projection_net.scale_distribution = True
+
+safe_sac_agent.SafeSacAgentOnline.target_entropy = -8
+safe_sac_agent.SafeSacAgentOnline.gamma = 1.
+safe_sac_agent.SafeSacAgentOnline.initial_log_alpha = 0.
+safe_sac_agent.SafeSacAgentOnline.safety_gamma = 0.4
+
+point_mass.PointMassEnv.action_scale = 0.5
+point_mass.PointMassEnv.action_noise = 0.1
+
+point_mass.TimeLimitBonus.early_term_penalty = 1.
+point_mass.TimeLimitBonus.early_term_bonus = 0.
+point_mass.TimeLimitBonus.time_limit_penalty = -%EP_LEN
+
+# point_mass.GoalConditionedPointWrapper.fall_penalty = -3.
+point_mass.GoalConditionedPointWrapper.task_rew_type = "+l2"

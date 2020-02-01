@@ -114,7 +114,7 @@ def train_eval(
     run_eval=False,
     num_eval_episodes=10,
     max_episode_len=500,
-    eval_interval=10000,
+    eval_interval=1000,
     eval_metrics_callback=None,
     # Params for summaries and logging
     train_checkpoint_interval=10000,
@@ -177,6 +177,9 @@ def train_eval(
       ))
     if seed:
       eval_tf_env.seed([seed + n_envs + i for i in range(n_envs)])
+  elif 'Drunk' in env_name:
+    # Just visualizes trajectories
+    eval_tf_env = tf_py_environment.TFPyEnvironment(env_load_fn(env_name))
 
   if monitor:
     vid_path = os.path.join(root_dir, 'rollouts')
@@ -478,10 +481,10 @@ def train_eval(
 
     logging.debug('starting policy pretraining')
     while (global_step.numpy() <= num_global_steps and not early_termination_fn()):
-      # Collect and train.
       start_time = time.time()
       current_step = global_step.numpy()
 
+      # MEASURE ACTION RESAMPLING FREQUENCY
       if online_critic:
         mean_resample_ac(resample_counter.result())
         resample_counter.reset()
@@ -489,12 +492,14 @@ def train_eval(
           resample_ac_freq = mean_resample_ac.result()
           mean_resample_ac.reset_states()
 
+      # RUN COLLECTION
       time_step, policy_state = collect_driver.run(
           time_step=time_step,
           policy_state=policy_state,
       )
       logging.debug('policy eval: {} sec'.format(time.time() - start_time))
 
+      # PERFORMS TRAIN STEP ON ALGORITHM (OFF-POLICY)
       train_time = time.time()
       for _ in range(train_steps_per_iteration):
         train_loss = train_step()
@@ -509,6 +514,7 @@ def train_eval(
         train_metrics_callback(
           {'train_loss': mean_train_loss.result().numpy()}, step=current_step)
 
+      # TRAIN (or evaluate) SAFETY CRITIC
       if online_critic and current_step % train_sc_interval == 0:
           batch_time_step = sc_tf_env.reset()
           batch_policy_state = online_collect_policy.get_initial_state(sc_tf_env.batch_size)
@@ -517,6 +523,7 @@ def train_eval(
           for _ in range(train_sc_steps):
             sc_loss, lambda_loss = critic_train_step()  # pylint: disable=unused-variable
 
+          sc_results = [('sc_loss', sc_loss.numpy()), ('lambda_loss', lambda_loss.numpy())]
           metric_utils.log_metrics(sc_metrics)
           with sc_summary_writer.as_default():
             for sc_metric in sc_metrics:
@@ -524,6 +531,9 @@ def train_eval(
                 train_step=global_step, step_metrics=sc_metrics[:2])
             tf.compat.v2.summary.scalar(
               name='resample_ac_freq', data=resample_ac_freq, step=global_step)
+            sc_results.append((sc_metric.name, sc_metric.result().numpy()))
+          if train_metrics_callback:
+            train_metrics_callback(collections.OrderedDict(sc_results), step=current_step)
 
       total_loss = mean_train_loss.result()
       mean_train_loss.reset_states()
@@ -542,6 +552,7 @@ def train_eval(
       time_acc += time.time() - start_time
 
       if current_step % log_interval == 0:
+        metric_utils.log_metrics(train_metrics)
         logging.info('step = %d, loss = %f', current_step, total_loss)
         steps_per_sec = (global_step.numpy() - timed_at_step) / time_acc
         logging.info('%.3f steps/sec', steps_per_sec)
@@ -589,6 +600,10 @@ def train_eval(
         rb_checkpointer.save(global_step=global_step_val)
       elif online_critic:
         clear_rb()
+      if current_step % eval_interval == 0 and "Drunk" in env_name:
+        misc.record_point_mass_episode(eval_tf_env, eval_policy, global_step_val)
+        if online_critic:
+          misc.record_point_mass_episode(eval_tf_env, tf_agent._safe_policy, global_step_val, 'safe-trajectory')
 
       if run_eval and global_step_val % eval_interval == 0:
         results = metric_utils.eager_compute(

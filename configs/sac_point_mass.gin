@@ -1,0 +1,17 @@
+import gin.tf.external_configurables
+import tensorflow
+import tf_agents.agents.sac.sac_agent
+import tf_agents.environments.suite_pybullet
+import tf_agents.agents.ddpg.critic_network
+import tf_agents.networks.actor_distribution_network
+
+import safemrl.trainer
+import safemrl.algos.ensemble_sac_agent
+
+include 'point_mass_default.gin'
+include 'sac.gin'
+
+agents.normal_projection_net.init_means_output_factor = 0.05
+sac_agent.SacAgent.target_entropy = -16
+sac_agent.SacAgent.gamma = 0.925
+sac_agent.SacAgent.initial_log_alpha = 0.

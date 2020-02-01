@@ -173,7 +173,12 @@ class PointMassEnv(gym.Env):
             gym.spaces.Box(low=np.array(0), high=np.array(1))
     })
     self._validate_start_goal()
+    self.seed()
     self.reset()
+
+  def _seed(self, seed=0):
+    np.random.seed(seed)
+    return [seed]
 
   def _discretize_state(self, state, resolution=1.0):
     (i, j) = np.floor(resolution * state).astype(np.int)
@@ -238,7 +243,7 @@ class PointMassEnv(gym.Env):
           return obs, -1., True, {}
         elif self.is_fallen(new_state):
           # rew adds -1 if in well for one full step
-          rew -= 1.0 / num_substeps
+          # rew -= 1.0 / num_substeps
           fallen = True
           task_agn = 1.
         self.state = new_state
@@ -307,11 +312,11 @@ class GoalConditionedPointWrapper(gym.Wrapper):
 
   def __init__(self,
                env,
-               goal=None,
+               goal=(7, 3),
                normalize_obs=False,
                task_rew_type='l2',
                reset_on_fall=True,
-               goal_bounds=None,
+               goal_bounds=[(6,2), (7,4)],
                threshold_distance=1.0,
                fall_penalty=0.):
     """Initialize the environment.
@@ -355,6 +360,7 @@ class GoalConditionedPointWrapper(gym.Wrapper):
         'fallen': env.observation_space['fallen'],
         'task_agn_rew': env.observation_space['task_agn_rew']
     })
+    self.reset()  # sets up goal value
 
   def _normalize_obs(self, obs):
     return np.array(
@@ -393,16 +399,22 @@ class GoalConditionedPointWrapper(gym.Wrapper):
     task_rew = rew  # includes alive bonus and fallen in well penalty..
     if self._task_rew_type == 'l1':
       # task_rew range: [-1, 0]
-      max_dist = self.env._height + self.env._width    # pylint: disable=protected-access
+      max_dist = self.env._height + self.env._width
       task_rew += -np.abs(state - goal).sum() / max_dist
     elif self._task_rew_type == 'l2':
-      max_dist = np.sqrt(self.env._height**2 + self.env._width**2)  # pylint: disable=protected-access
+      max_dist = np.sqrt(self.env._height**2 + self.env._width**2)
       task_rew += -np.linalg.norm(state - goal) / max_dist
+    elif self._task_rew_type == '+l2':  # positive l2
+      max_dist = np.sqrt(self.env._height ** 2 + self.env._width ** 2)
+      task_rew += 1 - np.linalg.norm(state - goal) / max_dist
+    elif self._task_rew_type == '+l1':
+      max_dist = self.env._height + self.env._width
+      task_rew += 1 - np.abs(state - goal).sum() / max_dist
     elif self._task_rew_type == '-1':  # alive penalty
       task_rew += -.1
 
     if self.is_done(state, goal) and not obs['fallen']:
-      task_rew = 1.
+      task_rew = 40.
       done = True
     elif obs['fallen']:  # if fallen into well
       done = True if self._reset_on_fall else False
@@ -453,12 +465,14 @@ class NonTerminatingTimeLimit(wrappers.PyEnvironmentBaseWrapper):
 class TimeLimitBonus(wrappers.PyEnvironmentBaseWrapper):
   """End episodes after specified steps, adding early bonus/penalty."""
 
-  def __init__(self, env, duration, early_term_bonus=1., early_term_penalty=1.):
+  def __init__(self, env, duration, early_term_bonus=1., early_term_penalty=1.,
+               time_limit_penalty=-2.):
     super(TimeLimitBonus, self).__init__(env)
     self._duration = duration
     self._num_steps = None
     self._early_term_bonus = early_term_bonus
     self._early_term_penalty = early_term_penalty
+    self._time_limit_penalty = time_limit_penalty
 
   def _reset(self):
     self._num_steps = 0
@@ -477,12 +491,13 @@ class TimeLimitBonus(wrappers.PyEnvironmentBaseWrapper):
     if time_step.is_last():
       if not time_step.observation['fallen']:
         reward = (
-            time_step.reward + self._early_term_bonus *
+            time_step.reward * self._early_term_bonus *
             (self._duration - self._num_steps))
+        if self._duration == self._num_steps and self._time_limit_penalty:
+          reward += self._time_limit_penalty
       else:
-        reward = (
-            time_step.reward - self._early_term_penalty *
-            (self._duration - self._num_steps))
+        reward = (time_step.reward - self._early_term_penalty *
+                  (self._duration - self._num_steps + 1))
       time_step = time_step._replace(
           reward=reward.astype(time_step.reward.dtype))
 
@@ -496,11 +511,10 @@ class TimeLimitBonus(wrappers.PyEnvironmentBaseWrapper):
 
 
 @gin.configurable
-def env_load_fn(environment_name='DrunkSpider',  # pylint: disable=dangerous-default-value
+def env_load_fn(environment_name='DrunkSpiderShort',
+                gym_env_wrappers=[],
                 max_episode_steps=50,
                 resize_factor=1,
-                env_kwargs=dict(action_noise=0., start=(0, 3)),
-                goal_env_kwargs=dict(goal=(7, 3)),
                 terminate_on_timeout=True):
   """Loads the selected environment and wraps it with the specified wrappers.
 
@@ -510,27 +524,26 @@ def env_load_fn(environment_name='DrunkSpider',  # pylint: disable=dangerous-def
       step limit defined in the environment's spec. No limit is applied if set
       to 0 or if there is no timestep_limit set in the environment's spec.
     resize_factor: A factor for resizing.
-    env_kwargs: Arguments for envs.
-    goal_env_kwargs: Arguments for goal envs.
     terminate_on_timeout: Whether to set done = True when the max episode steps
       is reached.
 
   Returns:
     A PyEnvironmentBase instance.
   """
+  # Env defaultsshould be configured via gin
   if 'acnoise' in environment_name.split('-'):
     environment_name = environment_name.split('-')[0]
     gym_env = PointMassAcNoiseEnv(
-      env_name=environment_name, resize_factor=resize_factor, **env_kwargs)
+      env_name=environment_name, resize_factor=resize_factor)
   elif 'acscale' in environment_name.split('-'):
     environment_name = environment_name.split('-')[0]
-    gym_env = PointMassAcNoiseEnv(
-      env_name=environment_name, resize_factor=resize_factor, **env_kwargs)
+    gym_env = PointMassAcScaleEnv(
+      env_name=environment_name, resize_factor=resize_factor)
   else:
     gym_env = PointMassEnv(
-        environment_name, resize_factor=resize_factor, **env_kwargs)
+        environment_name, resize_factor=resize_factor)
 
-  gym_env = GoalConditionedPointWrapper(gym_env, **goal_env_kwargs)
+  gym_env = GoalConditionedPointWrapper(gym_env)
   env = gym_wrapper.GymWrapper(
       gym_env, discount=1.0, auto_reset=True, simplify_box_bounds=False)
 
