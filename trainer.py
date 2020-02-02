@@ -1,7 +1,6 @@
 # coding=utf-8
 # Copyright 2019 The Google Research Authors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
+# # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
@@ -211,6 +210,7 @@ def train_eval(
       alpha_spec = tensor_spec.BoundedTensorSpec(shape=(1,), dtype=tf.float32, minimum=0., maximum=1.,
                                                  name='alpha')
       input_tensor_spec = (observation_spec, action_spec, alpha_spec)
+      logging.debug('input_tensor_spec: %s', input_tensor_spec)
       critic_net = agents.DistributionalCriticNetwork(
         input_tensor_spec, preprocessing_layer_size=critic_preprocessing_layer_size,
         joint_fc_layer_params=critic_joint_fc_layers)
@@ -307,7 +307,7 @@ def train_eval(
     else:
       eval_policy = tf_agent.policy
       collect_policy = tf_agent.collect_policy
-      online_collect_policy = tf_agent._safe_policy if updating_sc else tf_agent.collect_policy
+      online_collect_policy = tf_agent._safe_policy if pretraining else tf_agent.collect_policy
 
     initial_collect_policy = random_tf_policy.RandomTFPolicy(time_step_spec, action_spec)
     if agent_class == wcpg_agent.WcpgAgent:
@@ -336,12 +336,14 @@ def train_eval(
     if load_root_dir:
       load_root_dir = os.path.expanduser(load_root_dir)
       load_train_dir = os.path.join(load_root_dir, 'train')
-      misc.load_agent_ckpt(load_train_dir, tf_agent)
-      # load_rb_ckpt_dir = os.path.join(load_train_dir, 'replay_buffer')
-      # misc.load_rb_ckpt(load_rb_ckpt_dir, replay_buffer)
-      # if online_critic:
-      #   online_load_rb_ckpt_dir = os.path.join(load_train_dir, 'online_replay_buffer')
-      #   misc.load_rb_ckpt(online_load_rb_ckpt_dir, online_replay_buffer)
+      misc.load_agent_ckpt(load_train_dir, tf_agent) 
+      #load_rb_ckpt_dir = os.path.join(load_train_dir, 'replay_buffer')
+      #misc.load_rb_ckpt(load_rb_ckpt_dir, replay_buffer)
+      if online_critic:
+        online_load_rb_ckpt_dir = os.path.join(load_train_dir, 'online_replay_buffer')
+        misc.load_rb_ckpt(online_load_rb_ckpt_dir, online_replay_buffer)
+    else:
+      load_rb_ckpt_dir = None
 
     if load_root_dir is None:
       train_checkpointer.initialize_or_restore()
@@ -386,7 +388,7 @@ def train_eval(
     if eager_debug:
       tf.config.experimental_run_functions_eagerly(True)
 
-    if not rb_checkpointer.checkpoint_exists:
+    if not rb_checkpointer.checkpoint_exists and load_rb_ckpt_dir is None: # and pretraining:
       logging.info('Performing initial collection ...')
       initial_collect_driver_class(
           tf_env,
@@ -448,8 +450,8 @@ def train_eval(
         else:
           safe_rew = rb_rewards
           safe_rew = tf.gather(safe_rew, tf.squeeze(buf_info.ids), axis=1)
-        weights = 1 - safe_rew + safe_rew / tf.reduce_mean(safe_rew + 1e-16)
-        ret = tf_agent.train_sc(experience, safe_rew, metrics=critic_metrics, weights=weights, training=updating_sc)
+        weights = 1 - safe_rew + safe_rew * (tf.reduce_mean(1-safe_rew) / (5*tf.reduce_mean(safe_rew + 1e-16)))
+        ret = tf_agent.train_sc(experience, safe_rew, weights=weights, metrics=critic_metrics, training=updating_sc)
         logging.debug('critic train step: {} sec'.format(time.time() - start_time))
         return ret
 
@@ -498,6 +500,8 @@ def train_eval(
           time_step=time_step,
           policy_state=policy_state,
       )
+      if time_step.is_last() and agent_class == wcpg_agent.WcpgAgent:
+        collect_policy._alpha = None
       logging.debug('policy eval: {} sec'.format(time.time() - start_time))
 
       # PERFORMS TRAIN STEP ON ALGORITHM (OFF-POLICY)

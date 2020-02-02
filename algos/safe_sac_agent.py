@@ -709,7 +709,6 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
                                           trainable_safety_variables)
       self._apply_gradients(safety_critic_grads, trainable_safety_variables,
                             self._safety_critic_optimizer)
-    # update lambda variable
     lambda_variable = [self._log_lambda]
     with tf.GradientTape(watch_accessed_variables=False) as tape:
       assert lambda_variable, 'No lambda to optimize'
@@ -1002,10 +1001,10 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
 
       next_actions, next_log_pis = self._actions_and_log_probs(next_time_steps)
       target_input_1 = (next_time_steps.observation, next_actions)
-      target_q_values1, unused_network_state1 = self._target_critic_network_1(
+      target_q_values1, _ = self._target_critic_network_1(
           target_input_1, next_time_steps.step_type, training=False)
       target_input_2 = (next_time_steps.observation, next_actions)
-      target_q_values2, unused_network_state2 = self._target_critic_network_2(
+      target_q_values2, _ = self._target_critic_network_2(
           target_input_2, next_time_steps.step_type, training=False)
       target_q_values = (
           tf.minimum(target_q_values1, target_q_values2) -
@@ -1016,9 +1015,9 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
           gamma * next_time_steps.discount * target_q_values)
 
       pred_input = (time_steps.observation, actions)
-      pred_td_targets1, unused_network_state1 = self._critic_network_1(
+      pred_td_targets1, _ = self._critic_network_1(
           pred_input, time_steps.step_type, training=True)
-      pred_td_targets2, unused_network_state2 = self._critic_network_2(
+      pred_td_targets2, _ = self._critic_network_2(
           pred_input, time_steps.step_type, training=True)
       critic_loss1 = td_errors_loss_fn(td_targets, pred_td_targets1)
       critic_loss2 = td_errors_loss_fn(td_targets, pred_td_targets2)

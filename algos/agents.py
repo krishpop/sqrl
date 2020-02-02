@@ -32,6 +32,7 @@ import tensorflow as tf
 
 from absl import logging
 import tensorflow_probability as tfp
+from safemrl.utils import misc
 from tf_agents.agents.sac import sac_agent
 from tf_agents.networks import encoding_network
 from tf_agents.networks import network
@@ -273,7 +274,7 @@ class CriticNetwork(network.Network):
 
 def _critic_normal_projection_net(output_spec,
                                   init_stddev=0.35,
-                                  init_means_output_factor=0.01):
+                                  init_means_output_factor=0.1):
   del init_stddev
   # std_bias_initializer_value = round(np.log(init_action_stddev + 1e-10), 3)
 
@@ -295,6 +296,7 @@ class DistributionalCriticNetwork(network.DistributionNetwork):
       self,
       input_tensor_spec,
       preprocessing_layer_size=64,
+      preprocessing_combiner=None,
       joint_fc_layer_params=(64,),
       joint_dropout_layer_params=None,
       kernel_initializer=tf.compat.v1.keras.initializers.VarianceScaling(
@@ -330,12 +332,21 @@ class DistributionalCriticNetwork(network.DistributionNetwork):
     assert len(input_tensor_spec) == 3, 'input_tensor_spec should contain obs, ac, and alpha specs'
     observation_spec, action_spec, alpha_spec = input_tensor_spec
 
-    preprocessing_layers = (tf.keras.layers.Dense(preprocessing_layer_size),
-                            tf.keras.layers.Lambda(lambda x: x),
-                            tf.keras.layers.Dense(preprocessing_layer_size))
+    if isinstance(observation_spec, collections.OrderedDict):
+      logging.debug("building layers with obs extract!")
+      preprocessing_layers = ([misc.extract_observation_layer(), tf.keras.layers.Dense(preprocessing_layer_size)],
+                              [tf.keras.layers.Lambda(lambda x: x)],
+                              [tf.keras.layers.Dense(preprocessing_layer_size)])
+    else:
+      preprocessing_layers = (tf.keras.layers.Dense(preprocessing_layer_size),
+                              tf.keras.layers.Lambda(lambda x: x),
+                              tf.keras.layers.Dense(preprocessing_layer_size))
+ 
     preprocessing_combiner = tf.keras.layers.Concatenate(axis=-1)
-
-    output_spec = tensor_spec.TensorSpec(shape=(1,), name='R')
+ 
+    minval = tf.float32.min
+    maxval = tf.float32.max
+    output_spec = tensor_spec.TensorSpec(shape=(1,), dtype=tf.float32, name='R')
 
     super(DistributionalCriticNetwork, self).__init__(
         input_tensor_spec=input_tensor_spec, output_spec=output_spec, state_spec=(), name=name)
@@ -379,10 +390,16 @@ class WcpgActorNetwork(network.Network):
       input_tensor_spec=input_tensor_spec,
       state_spec=(),
       name=name)
-    preprocessing_layers = [tf.keras.layers.Dense(preprocessing_layer_size),
-                            tf.keras.layers.Dense(preprocessing_layer_size/2)]
-    preprocessing_combiner = tf.keras.layers.Concatenate(axis=-1)
+
     observation_spec, alpha_spec = input_tensor_spec
+    if isinstance(observation_spec, collections.OrderedDict):
+      preprocessing_layers = [[misc.extract_observation_layer(), tf.keras.layers.Dense(preprocessing_layer_size)],
+                              [tf.keras.layers.Dense(preprocessing_layer_size/2)]]
+    else:
+      preprocessing_layers = [tf.keras.layers.Dense(preprocessing_layer_size),
+                              tf.keras.layers.Dense(preprocessing_layer_size/2)]
+ 
+    preprocessing_combiner = tf.keras.layers.Concatenate(axis=-1)
 
     self._output_tensor_spec = output_tensor_spec
     flat_action_spec = tf.nest.flatten(output_tensor_spec)
@@ -457,8 +474,6 @@ class WcpgPolicy(actor_policy.ActorPolicy):
                                training=self._training)
 
   def _distribution(self, time_step, policy_state):
-    if time_step.is_first():
-      self._alpha = None
     distribution_step = super(WcpgPolicy, self)._distribution(time_step, policy_state)
     return distribution_step._replace(info=WcpgPolicyInfo(alpha=self.alpha))
 
@@ -562,7 +577,7 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
                                                 time_step.step_type,
                                                 policy_state,
                                                 training=self._training)
-    if has_batch_dim and self._training:  # returns normal actions, unmasked, when not training
+    if has_batch_dim or self._training:  # returns normal actions, unmasked, when not training
       return actions, policy_state
 
     # samples "best" safe action out of 50

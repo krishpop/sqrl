@@ -57,7 +57,7 @@ def define_flags():
   flags.DEFINE_integer('target_update_period', 1, 'Period for soft update of the target networks')
   flags.DEFINE_float('gamma', 0.99, 'Future reward discount factor')
   flags.DEFINE_float('reward_scale_factor', 1.0, 'Reward scale factor for SacAgent')
-  flags.DEFINE_float('gradient_clipping', 2., 'Gradient clipping factor for SacAgent')
+  flags.DEFINE_float('gradient_clipping', None, 'Gradient clipping factor for SacAgent')
   ## SAC args
   flags.DEFINE_float('entropy_lr', None, 'Learning rate for alpha')
   flags.DEFINE_integer('target_entropy', None, 'Target entropy for policy')
@@ -89,7 +89,7 @@ def load_prev_run(config):
   exp_dir = os.environ.get('EXP_DIR')
   root_dir = run.config['root_dir'].split('tfagents/')[-1]
   load_path = osp.join(exp_dir, root_dir)
-  assert osp.exists(load_path, 'tried to load path the does not exist: {}'.format(load_path))
+  assert osp.exists(load_path), 'tried to load path the does not exist: {}'.format(load_path)
   op_config = os.path.join(load_path, 'train/operative_config-0.gin')
   if not wandb.run.resumed:
     config.update(dict(gin_files=run.config['gin_files'] + [op_config]), allow_val_change=True)
