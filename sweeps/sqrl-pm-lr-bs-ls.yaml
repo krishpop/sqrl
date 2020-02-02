@@ -1,0 +1,37 @@
+name: pointmass_lr_sweep
+program: run_experiment.py
+method: bayes
+metric:
+  name: AverageReturn
+  goal: max
+early_terminate:
+  type: hyperband
+  min_iter: 100
+parameters:
+  actor_lr:
+    distribution: uniform
+    min: -5
+    max: -3
+  entropy_lr:
+    distribution: uniform
+    min: -5
+    max: -3
+  critic_lr:
+    distribution: uniform
+    min: -5
+    max: -3
+  safety_lr:
+    distribution: uniform
+    min: -5
+    max: -3
+  layer_size:
+    distribution: categorical
+    values: [32, 64, 256]
+  target_entropy:
+    value: -8
+#    distribution: categorical
+#    values: [-16, -8]
+  initial_collect_steps:
+    value: 500
+  env_str:
+    value: "DrunkSpiderShort"

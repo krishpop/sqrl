@@ -18,7 +18,8 @@ RUN_CONFIG_BLACKLIST = {'safety_gamma', 'target_safety', 'friction', 'drop_penal
 # keys to exclude from wandb config
 FLAGS = flags.FLAGS
 EXCLUDE_KEYS = list(FLAGS) + ['name', 'notes', 'monitor', 'debug', 'eager_debug',
-                              'num_threads']
+                              'num_threads', 'help', 'helpfull', 'helpshort', 'helpxml',
+                              'resume_id']
 
 def define_flags():
   # Configs & checkpointing args
@@ -52,19 +53,19 @@ def define_flags():
   flags.DEFINE_float('lr', 3e-4, 'Learning rate for all optimizers')
   flags.DEFINE_float('actor_lr', None, 'Learning rate for actor')
   flags.DEFINE_float('critic_lr', None, 'Learning rate for critic')
-  flags.DEFINE_float('target_update_tau', 0.005, 'Factor for soft update of the target networks')
+  flags.DEFINE_float('target_update_tau', 0.001, 'Factor for soft update of the target networks')
   flags.DEFINE_integer('target_update_period', 1, 'Period for soft update of the target networks')
   flags.DEFINE_float('gamma', 0.99, 'Future reward discount factor')
   flags.DEFINE_float('reward_scale_factor', 1.0, 'Reward scale factor for SacAgent')
-  flags.DEFINE_float('gradient_clipping', 2, 'Gradient clipping factor for SacAgent')
+  flags.DEFINE_float('gradient_clipping', 2., 'Gradient clipping factor for SacAgent')
   ## SAC args
   flags.DEFINE_float('entropy_lr', None, 'Learning rate for alpha')
-  flags.DEFINE_integer('target_entropy', -8, 'Target entropy for policy')
-  flags.DEFINE_float('initial_log_alpha', 0., 'Initial value for log_alpha')
+  flags.DEFINE_integer('target_entropy', None, 'Target entropy for policy')
+  flags.DEFINE_float('initial_log_alpha', 1., 'Initial value for log_alpha')
   ### SQRL args
   flags.DEFINE_float('safety_lr', None, 'Learning rate for safety critic')
   flags.DEFINE_float('safety_gamma', None, 'Safety discount term used for TD backups')
-  flags.DEFINE_float('target_safety', 0.15, 'Target safety for safety critic')
+  flags.DEFINE_float('target_safety', 0.1, 'Target safety for safety critic')
   ### SAC-ensemble args
   flags.DEFINE_integer('n_critics', None, 'number of critics to use')
 
@@ -87,7 +88,9 @@ def load_prev_run(config):
   # Make path invariant to which machine training was done on
   exp_dir = os.environ.get('EXP_DIR')
   root_dir = run.config['root_dir'].split('tfagents/')[-1]
-  op_config = os.path.join(exp_dir, root_dir, 'train/operative_config-0.gin')
+  load_path = osp.join(exp_dir, root_dir)
+  assert osp.exists(load_path, 'tried to load path the does not exist: {}'.format(load_path))
+  op_config = os.path.join(load_path, 'train/operative_config-0.gin')
   if not wandb.run.resumed:
     config.update(dict(gin_files=run.config['gin_files'] + [op_config]), allow_val_change=True)
   else:
@@ -108,18 +111,19 @@ def update_root(config):
 
 def gin_bindings_from_config(config, gin_bindings=[]):
   gin_bindings = gin_bindings or []
-
+  agent_class = gin.query_parameter('%AGENT_CLASS')
   # Configure agent prefixes
-  if gin.query_parameter('%AGENT_CLASS') == 'sac_safe_online':
+  if agent_class == 'sac_safe_online':
     gin_bindings.append('safe_sac_agent.SafeSacAgentOnline.safety_gamma = {}'.format(config.safety_gamma))
     gin_bindings.append('safe_sac_agent.SafeSacAgentOnline.target_safety = {}'.format(config.target_safety))
     agent_prefix = 'safe_sac_agent.SafeSacAgentOnline'
-  elif gin.query_parameter('%AGENT_CLASS') == 'sac':
+  elif agent_class == 'sac':
     agent_prefix = 'sac_agent.SacAgent'
-  elif gin.query_parameter('%AGENT_CLASS') == 'wcpg':
+  elif agent_class == 'wcpg':
     agent_prefix = 'wcpg_agent.WcpgAgent'
-  elif gin.query_parameter('%AGENT_CLASS') == 'sac_ensemble':
-    gin_bindings.append('trainer.train_eval.n_critics = {}'.format(config.n_critics))
+  elif agent_class == 'sac_ensemble':
+    if not wandb.run.resumed:
+      gin_bindings.append('trainer.train_eval.n_critics = {}'.format(config.n_critics))
     agent_prefix = 'ensemble_sac_agent.EnsembleSacAgent'
 
   # Config value updates
@@ -131,37 +135,42 @@ def gin_bindings_from_config(config, gin_bindings=[]):
       gin_bindings.append('LEARNING_RATE = {}'.format(config.lr))
     else:
       if config.actor_lr and config.actor_lr < 0:
-        config.update(dict(actor_lr=10**config.actor_lr), allow_val_change=True)
+        ac_lr = round(10 ** config.actor_lr, 5)
+        config.update(dict(actor_lr=ac_lr), allow_val_change=True)
       if config.critic_lr and config.critic_lr < 0:
-        config.update(dict(critic_lr=10**config.critic_lr), allow_val_change=True)
+        cr_lr = round(10 ** config.critic_lr, 5)
+        config.update(dict(critic_lr=cr_lr), allow_val_change=True)
       if config.entropy_lr and config.entropy_lr < 0:
-        config.update(dict(entropy_lr=10**config.entropy_lr), allow_val_change=True)
+        al_lr = round(10 ** config.entropy_lr, 5)
+        config.update(dict(entropy_lr=al_lr), allow_val_change=True)
+      if config.safety_lr and config.safety_lr < 0:
+        sc_lr = round(10 ** config.safety_lr, 5)
+        config.update(dict(entropy_lr=sc_lr), allow_val_change=True)
 
-  # Generic agent bindings
-  gin_bindings.append('{}.reward_scale_factor = {}'.format(agent_prefix, config.reward_scale_factor))
-  gin_bindings.append('{}.target_update_tau = {}'.format(agent_prefix, config.target_update_tau))
-  gin_bindings.append('{}.target_update_period = {}'.format(agent_prefix, config.target_update_period))
-  gin_bindings.append('{}.gamma = {}'.format(agent_prefix, config.gamma))
-  gin_bindings.append('{}.gradient_clipping = {}'.format(agent_prefix, config.gradient_clipping))
+    # Generic agent bindings
+    gin_bindings.append('{}.reward_scale_factor = {}'.format(agent_prefix, config.reward_scale_factor))
+    gin_bindings.append('{}.target_update_tau = {}'.format(agent_prefix, config.target_update_tau))
+    gin_bindings.append('{}.target_update_period = {}'.format(agent_prefix, config.target_update_period))
+    gin_bindings.append('{}.gamma = {}'.format(agent_prefix, config.gamma))
+    gin_bindings.append('{}.gradient_clipping = {}'.format(agent_prefix, config.gradient_clipping))
 
   ## Agent-specific bindings
   if agent_prefix != 'wcpg_agent.WcpgAgent':  # WCPG does not use target entropy
     if config.target_entropy:
       gin_bindings.append('{}.target_entropy = {}'.format(agent_prefix, config.target_entropy))
-    if config.entropy_lr:
+    if config.entropy_lr and not wandb.run.resumed:
       gin_bindings.append('al_opt/tf.keras.optimizers.Adam.learning_rate = {}'.format(config.entropy_lr))
 
-  if config.safety_lr and agent_prefix.split('.')[0] == 'safe_sac_agent':
-    gin_bindings.append('sc_opt/tf.keras.optimizers.Adam.learning_rate = {}'.format(config.safety_lr))
-
-  if config.critic_lr:
-    if agent_prefix == 'ensemble_sac_agent.EnsembleSacAgent':
-      gin_bindings.append('trainer.train_eval.critic_learning_rate = {}'.format(config.critic_lr))
-    else:
-      gin_bindings.append('cr_opt/tf.keras.optimizers.Adam.learning_rate = {}'.format(config.critic_lr))
-
-  if config.actor_lr:
-    gin_bindings.append('ac_opt/tf.keras.optimizers.Adam.learning_rate = {}'.format(config.actor_lr))
+  if not wandb.run.resumed:
+    if config.safety_lr and agent_class in ['sac_safe', 'sac_safe_online']:
+      gin_bindings.append('sc_opt/tf.keras.optimizers.Adam.learning_rate = {}'.format(config.safety_lr))
+    if config.critic_lr:
+      if agent_prefix == 'ensemble_sac_agent.EnsembleSacAgent':
+        gin_bindings.append('trainer.train_eval.critic_learning_rate = {}'.format(config.critic_lr))
+      else:
+        gin_bindings.append('cr_opt/tf.keras.optimizers.Adam.learning_rate = {}'.format(config.critic_lr))
+    if config.actor_lr:
+      gin_bindings.append('ac_opt/tf.keras.optimizers.Adam.learning_rate = {}'.format(config.actor_lr))
 
   ## Env-specific bindings
   env_str = config.env_str or gin.query_parameter('%ENV_STR')
@@ -185,7 +194,7 @@ def gin_bindings_from_config(config, gin_bindings=[]):
     gin_bindings.append('ENV_STR = "{}"'.format(config.env_str))
   if config.num_steps:
     gin_bindings.append('NUM_STEPS = {}'.format(config.num_steps))
-  if config.layer_size:
+  if config.layer_size and not wandb.run.resumed:
     gin_bindings.append('LAYER_SIZE = {}'.format(config.layer_size))
   return gin_bindings
 
@@ -208,7 +217,6 @@ def main(_):
     gin.add_config_file_search_path(os.environ.get('CONFIG_DIR'))
 
   config = wandb.config
-  config.update(dict(num_steps=FLAGS.num_steps), allow_val_change=True)
 
   # Only update root_path if not resuming a run
   if not wandb.run.resumed:
@@ -235,6 +243,6 @@ def main(_):
 
 
 if __name__ == '__main__':
-  flags.mark_flag_as_required('name')
+  # flags.mark_flag_as_required('name')
   flags.mark_flag_as_required('root_dir')
   app.run(main)

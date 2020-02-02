@@ -274,12 +274,13 @@ class CriticNetwork(network.Network):
 def _critic_normal_projection_net(output_spec,
                                   init_stddev=0.35,
                                   init_means_output_factor=0.01):
-  std_bias_initializer_value = round(np.log(init_action_stddev + 1e-10), 3)
+  del init_stddev
+  # std_bias_initializer_value = round(np.log(init_action_stddev + 1e-10), 3)
 
   return normal_projection_network.NormalProjectionNetwork(
       output_spec,
       init_means_output_factor=init_means_output_factor,
-      std_bias_initializer_value=std_bias_initializer_value,
+      # std_bias_initializer_value=std_bias_initializer_value,
       mean_transform=None,
       std_transform=sac_agent.std_clip_transform,
       state_dependent_std=True,
@@ -561,7 +562,7 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
                                                 time_step.step_type,
                                                 policy_state,
                                                 training=self._training)
-    if has_batch_dim or self._training:  # returns normal actions, unmasked, when not training
+    if has_batch_dim and self._training:  # returns normal actions, unmasked, when not training
       return actions, policy_state
 
     # samples "best" safe action out of 50

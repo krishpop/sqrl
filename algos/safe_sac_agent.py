@@ -874,8 +874,8 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
     # Get raw action distribution from policy, and initialize bijectors list.
     batch_size = nest_utils.get_outer_shape(time_steps, self.time_step_spec)[0]
     if self._safety_pretraining:
-      policy_state = self.policy.get_initial_state(batch_size)
-      action_distribution = self.policy.distribution(
+      policy_state = self.collect_policy.get_initial_state(batch_size)
+      action_distribution = self.collect_policy.distribution(
           time_steps, policy_state=policy_state).action
     else:
       # n = 30

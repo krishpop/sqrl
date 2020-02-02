@@ -101,12 +101,13 @@ def resize_walls(walls, factor):
   Returns:
     walls: rescaled walls
   """
+  resize_w, resize_h = factor
   (height, width) = walls.shape
-  row_indices = np.array([i for i in range(height) for _ in range(factor)])  # pylint: disable=g-complex-comprehension
-  col_indices = np.array([i for i in range(width) for _ in range(factor)])  # pylint: disable=g-complex-comprehension
+  row_indices = np.array([i for i in range(height) for _ in range(resize_h)])  # pylint: disable=g-complex-comprehension
+  col_indices = np.array([i for i in range(width) for _ in range(resize_w)])  # pylint: disable=g-complex-comprehension
   walls = walls[row_indices]
   walls = walls[:, col_indices]
-  assert walls.shape == (factor * height, factor * width)
+  assert walls.shape == (resize_h * height, resize_w * width)
   return walls
 
 
@@ -117,7 +118,7 @@ class PointMassEnv(gym.Env):
   def __init__(self,
                env_name='DrunkSpiderShort',
                start=(0, 3),
-               resize_factor=1,
+               resize_factor=(1,1),
                action_noise=0.,
                action_scale=1.,
                start_bounds=None,
@@ -140,7 +141,7 @@ class PointMassEnv(gym.Env):
     self._start = start if start is None else np.array(start, dtype=float)
     self.state = self._start
 
-    if resize_factor > 1:
+    if resize_factor[0] > 1 or resize_factor[1] > 1:
       self._walls = resize_walls(WALLS[walls], resize_factor)
     else:
       self._walls = WALLS[walls]
@@ -514,7 +515,7 @@ class TimeLimitBonus(wrappers.PyEnvironmentBaseWrapper):
 def env_load_fn(environment_name='DrunkSpiderShort',
                 gym_env_wrappers=[],
                 max_episode_steps=50,
-                resize_factor=1,
+                resize_factor=(1,1),
                 terminate_on_timeout=True):
   """Loads the selected environment and wraps it with the specified wrappers.
 

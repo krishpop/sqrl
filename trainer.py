@@ -300,6 +300,7 @@ def train_eval(
             buffer_size=num_eval_episodes, batch_size=tf_env.batch_size),
     ] + [tf_py_metric.TFPyMetric(m) for m in train_metrics]
 
+    # SETUP TF AGENTS POLICIES
     if not online_critic:
       eval_policy = tf_agent.policy
       collect_policy = tf_agent.collect_policy
