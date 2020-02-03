@@ -415,7 +415,7 @@ class GoalConditionedPointWrapper(gym.Wrapper):
       task_rew += -.1
 
     if self.is_done(state, goal) and not obs['fallen']:
-      task_rew = 1.
+      task_rew = 10.
       done = True
     elif obs['fallen']:  # if fallen into well
       done = True if self._reset_on_fall else False
