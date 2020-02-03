@@ -7,3 +7,4 @@ videos/
 *.swp
 *.pyc
 .ipynb_checkpoints
+*.ipynb

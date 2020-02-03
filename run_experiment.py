@@ -37,6 +37,7 @@ def define_flags():
   flags.DEFINE_string('env_str', None, 'Environment string')
   flags.DEFINE_boolean('monitor', False, 'load environments with Monitor wrapper')
   flags.DEFINE_boolean('finetune', False, 'Fine-tuning task safety')
+  flags.DEFINE_boolean('finetune_sc', False, 'Fine-tuning safety critic')
   flags.DEFINE_integer('num_steps', None, 'Number of training steps')
   flags.DEFINE_integer('initial_collect_steps', 1000, 'Number of steps to collect with random policy')
   flags.DEFINE_boolean('debug_summaries', False, 'Debug summaries for critic and actor')
@@ -122,7 +123,7 @@ def gin_bindings_from_config(config, gin_bindings=[]):
   elif agent_class == 'wcpg':
     agent_prefix = 'wcpg_agent.WcpgAgent'
   elif agent_class == 'sac_ensemble':
-    if not wandb.run.resumed:
+    if not wandb.run.resumed and config.n_critics:
       gin_bindings.append('trainer.train_eval.n_critics = {}'.format(config.n_critics))
     agent_prefix = 'ensemble_sac_agent.EnsembleSacAgent'
 
@@ -239,7 +240,8 @@ def main(_):
 
   trainer.train_eval(config.root_dir, load_root_dir=FLAGS.load_dir, batch_size=config.batch_size, seed=FLAGS.seed,
                      train_metrics_callback=wandb.log, eager_debug=FLAGS.eager_debug,
-                     monitor=FLAGS.monitor, debug_summaries=FLAGS.debug_summaries, pretraining=(not FLAGS.finetune))
+                     monitor=FLAGS.monitor, debug_summaries=FLAGS.debug_summaries, pretraining=(not FLAGS.finetune),
+                     finetune_sc=FLAGS.finetune_sc)
 
 
 if __name__ == '__main__':
