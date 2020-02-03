@@ -73,6 +73,7 @@ def define_flags():
   # Env args
   ## Minitaur
   flags.DEFINE_float('friction', None, 'Friction for Minitaur environment')
+  flags.DEFINE_float('goal_vel', None, 'Goal velocity for Minitaur environment')
   ## CubeEnv
   flags.DEFINE_float('drop_penalty', -500., 'Drop penalty for cube environment')
   ## PointMass
@@ -175,8 +176,11 @@ def gin_bindings_from_config(config, gin_bindings=[]):
 
   ## Env-specific bindings
   env_str = config.env_str or gin.query_parameter('%ENV_STR')
-  if 'Minitaur' in env_str and config.friction:
-    gin_bindings.append('minitaur.MinitaurGoalVelocityEnv.friction = {}'.format(config.friction))
+  if 'Minitaur' in env_str:
+    if config.friction:
+      gin_bindings.append('minitaur.MinitaurGoalVelocityEnv.friction = {}'.format(config.friction))
+    if config.goal_vel:
+      gin_bindings.append("minitaur.MinitaurGoalVelocityEnv.goal_vel = {}".format(config.goal_vel))
   elif 'Cube' in env_str and config.drop_penalty:
     gin_bindings.append('cube_env.SafemrlCubeEnv.drop_penalty = {}'.format(config.drop_penalty))
     if config.finetune:

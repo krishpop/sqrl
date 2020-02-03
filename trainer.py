@@ -1,6 +1,7 @@
 # coding=utf-8
 # Copyright 2019 The Google Research Authors.
-# # Licensed under the Apache License, Version 2.0 (the "License");
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
@@ -454,7 +455,8 @@ def train_eval(
         else:
           safe_rew = rb_rewards
           safe_rew = tf.gather(safe_rew, tf.squeeze(buf_info.ids), axis=1)
-        weights = 1 - safe_rew + safe_rew * 50
+        weights = (safe_rew / tf.reduce_mean(safe_rew+1e-16) + (1-safe_rew) / (tf.reduce_mean(1-safe_rew))) / 2
+        # weights = 1 - safe_rew + safe_rew * (tf.reduce_mean(1-safe_rew) / 2 * tf.reduce_mean(safe_rew + 1e-16))
         ret = tf_agent.train_sc(experience, safe_rew, weights=weights, metrics=critic_metrics, training=updating_sc)
         logging.debug('critic train step: {} sec'.format(time.time() - start_time))
         return ret

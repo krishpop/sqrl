@@ -296,7 +296,6 @@ class DistributionalCriticNetwork(network.DistributionNetwork):
       self,
       input_tensor_spec,
       preprocessing_layer_size=64,
-      preprocessing_combiner=None,
       joint_fc_layer_params=(64,),
       joint_dropout_layer_params=None,
       kernel_initializer=tf.compat.v1.keras.initializers.VarianceScaling(
@@ -344,8 +343,6 @@ class DistributionalCriticNetwork(network.DistributionNetwork):
  
     preprocessing_combiner = tf.keras.layers.Concatenate(axis=-1)
  
-    minval = tf.float32.min
-    maxval = tf.float32.max
     output_spec = tensor_spec.TensorSpec(shape=(1,), dtype=tf.float32, name='R')
 
     super(DistributionalCriticNetwork, self).__init__(

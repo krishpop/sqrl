@@ -343,7 +343,7 @@ class SafeSacAgent(sac_agent.SacAgent):
       next_actions, next_log_pis = self._actions_and_log_probs(  # pylint: disable=unused-variable
           next_time_steps)
       target_input = (next_time_steps.observation, next_actions)
-      target_q_values, unused_network_state1 = self._safety_critic_network(
+      target_q_values, _ = self._safety_critic_network(
           target_input, next_time_steps.step_type)
       target_q_values = tf.nn.sigmoid(target_q_values)
 
@@ -352,8 +352,9 @@ class SafeSacAgent(sac_agent.SacAgent):
                                     next_time_steps.discount * target_q_values)
 
       pred_input = (time_steps.observation, actions)
-      pred_td_targets, unused_network_state1 = self._safety_critic_network(
+      pred_td_targets, _ = self._safety_critic_network(
           pred_input, time_steps.step_type)
+      pred_td_targets = tf.nn.sigmoid(pred_td_targets)
       safety_critic_loss = self._safe_td_errors_loss_fn(td_targets,
                                                         pred_td_targets)
 
@@ -793,8 +794,9 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
 
     if not self._train_critic_online:
       # update safety critic
-      safety_critic_loss, lambda_loss = self.train_sc(
-          experience, experience.observation['task_agn_rew'], weights)
+      safe_rew = experience.observation['task_agn_rew']
+      sc_weights = (safe_rew / tf.reduce_mean(safe_rew+1e-16) + (1-safe_rew) / (tf.reduce_mean(1-safe_rew))) / 2
+      safety_critic_loss, lambda_loss = self.train_sc(experience, safe_rew, sc_weights)
 
     with tf.name_scope('Losses'):
       tf.compat.v2.summary.scalar(
@@ -927,7 +929,7 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
       next_actions, next_log_pis = self._actions_and_log_probs(  # pylint: disable=unused-variable
           next_time_steps)
       target_input = (next_time_steps.observation, next_actions)
-      target_q_values, unused_network_state1 = self._safety_critic_network(
+      target_q_values, _ = self._safety_critic_network(
           target_input, next_time_steps.step_type)
       target_q_values = tf.nn.sigmoid(target_q_values)
 
@@ -936,8 +938,8 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
                                     next_time_steps.discount * target_q_values)
 
       pred_input = (time_steps.observation, actions)
-      pred_td_targets, unused_network_state1 = self._safety_critic_network(
-          pred_input, time_steps.step_type)
+      pred_td_targets, _ = self._safety_critic_network(
+          pred_input, time_steps.step_type, training=True)
       pred_td_targets = tf.nn.sigmoid(pred_td_targets)
       safety_critic_loss = self._safe_td_errors_loss_fn(td_targets,
                                                         pred_td_targets)
@@ -1091,6 +1093,8 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
           step=self.train_step_counter)
         common.generate_tensor_summaries('target_q_values', target_q_values,
                                          self.train_step_counter)
+        if not self._safety_pretraining:
+          common.generate_tensor_summaries('q_safe', q_safe, self.train_step_counter)
         batch_size = nest_utils.get_outer_shape(time_steps,
                                                 self._time_step_spec)[0]
         policy_state = self.policy.get_initial_state(batch_size)
@@ -1165,7 +1169,7 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
     with tf.name_scope('alpha_loss'):
       tf.nest.assert_same_structure(time_steps, self.time_step_spec)
 
-      unused_actions, log_pi = self._actions_and_log_probs(time_steps)
+      _, log_pi = self._actions_and_log_probs(time_steps)
       alpha_loss = (
           self._log_alpha * tf.stop_gradient(-log_pi - self._target_entropy))
 

@@ -29,7 +29,7 @@ parameters:
     values: [32, 64, 256]
   target_entropy:
     value: -8
-#    distribution: categorical
+#    distribution: categorical_
 #    values: [-16, -8]
   initial_collect_steps:
     value: 500
