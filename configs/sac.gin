@@ -27,7 +27,7 @@ trainer.train_eval.eval_metrics = %EVAL_METRICS
 trainer.train_eval.env_metric_factories = %ENV_METRIC_FACTORIES
 trainer.train_eval.num_global_steps = %NUM_STEPS
 trainer.train_eval.online_critic = False
-trainer.train_eval.keep_rb_checkpoint = False
+trainer.train_eval.keep_rb_checkpoint = True
 trainer.train_eval.max_episode_len = %EP_LEN
 
 trainer.train_eval.initial_collect_driver_class = @init_collect/dynamic_step_driver.DynamicStepDriver

@@ -10,13 +10,13 @@ import safemrl.algos.wcpg_agent
 include 'networks.gin'
 include 'sac.gin'
 
-LEARNING_RATE = 3e-5
-CRITIC_LEARNING_RATE = 1e-5
+LEARNING_RATE = 3e-4
+CRITIC_LR = 1e-4
 AGENT_CLASS = 'wcpg'
 
 trainer.train_eval.gym_env_wrappers = []
 
-wcpg_agent.WcpgAgent.target_update_tau = 0.005
+wcpg_agent.WcpgAgent.target_update_tau = 0.01
 wcpg_agent.WcpgAgent.reward_scale_factor = 10.0
 wcpg_agent.WcpgAgent.gradient_clipping = None
 wcpg_agent.WcpgAgent.gamma = 0.99
@@ -24,7 +24,7 @@ wcpg_agent.WcpgAgent.exploration_noise_stddev = 1.0
 wcpg_agent.WcpgAgent.actor_optimizer = @ac_opt/tf.keras.optimizers.Adam()
 ac_opt/tf.keras.optimizers.Adam.learning_rate = %LEARNING_RATE
 wcpg_agent.WcpgAgent.critic_optimizer = @cr_opt/tf.keras.optimizers.Adam()
-cr_opt/tf.keras.optimizers.Adam.learning_rate = %CRITIC_LEARNING_RATE
+cr_opt/tf.keras.optimizers.Adam.learning_rate = %CRITIC_LR
 
 # agents.WcpgActorNetwork.fc_layer_params = (32, )
 # agents.WcpgActorNetwork.preprocessing_layer_size = 32

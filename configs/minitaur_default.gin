@@ -38,7 +38,7 @@ minitaur.MinitaurGoalVelocityEnv.history_include_states = True
 minitaur.MinitaurGoalVelocityEnv.include_leg_model = True
 
 minitaur.MinitaurGoalVelocityEnv.goal_limit = 0.8
-minitaur.MinitaurGoalVelocityEnv.goal_vel = 0.4
+minitaur.MinitaurGoalVelocityEnv.goal_vel = 0.4  # 0.4
 minitaur.MinitaurGoalVelocityEnv.butterworth = True
 
 actor_distribution_network.ActorDistributionNetwork.preprocessing_combiner = (
