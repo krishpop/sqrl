@@ -57,6 +57,8 @@ safe_sac_agent.SafeSacAgentOnline.alpha_optimizer = @al_opt/tf.keras.optimizers.
 al_opt/tf.keras.optimizers.Adam.learning_rate = %LEARNING_RATE
 safe_sac_agent.SafeSacAgentOnline.safety_critic_optimizer = @sc_opt/tf.keras.optimizers.Adam()
 sc_opt/tf.keras.optimizers.Adam.learning_rate = %LEARNING_RATE
+safe_sac_agent.SafeSacAgentOnline.lambda_optimizer = @lam_opt/tf.keras.optimizers.Adam()
+lam_opt/tf.keras.optimizers.Adam.learning_rate = %LEARNING_RATE
 
 trainer.train_eval.initial_collect_driver_class = @init_collect/dynamic_step_driver.DynamicStepDriver
 init_collect/dynamic_step_driver.DynamicStepDriver.num_steps = %INITIAL_NUM_STEPS
