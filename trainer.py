@@ -148,18 +148,19 @@ def train_eval(
 
   updating_sc = True #online_critic and (not load_root_dir or finetune_sc)
 
-  if online_critic:
+  if agent_class in SAFETY_AGENTS:
     sc_dir = os.path.join(root_dir, 'sc')
-    sc_summary_writer = tf.compat.v2.summary.create_file_writer(
-      sc_dir, flush_millis=summaries_flush_secs * 1000)
-    sc_metrics = [
-        tf_metrics.AverageReturnMetric(buffer_size=num_eval_episodes, batch_size=n_envs, name='SafeAverageReturn'),
-        tf_metrics.AverageEpisodeLengthMetric(buffer_size=num_eval_episodes, batch_size=n_envs, name='SafeAverageEpisodeLength')
-    ] + [tf_py_metric.TFPyMetric(m) for m in sc_metrics]
-    sc_tf_env = tf_py_environment.TFPyEnvironment(
-      parallel_py_environment.ParallelPyEnvironment(
-        [lambda: env_load_fn(env_name, gym_env_wrappers=gym_env_wrappers)] * n_envs
-      ))
+    if online_critic:
+      sc_summary_writer = tf.compat.v2.summary.create_file_writer(
+        sc_dir, flush_millis=summaries_flush_secs * 1000)
+      sc_metrics = [
+          tf_metrics.AverageReturnMetric(buffer_size=num_eval_episodes, batch_size=n_envs, name='SafeAverageReturn'),
+          tf_metrics.AverageEpisodeLengthMetric(buffer_size=num_eval_episodes, batch_size=n_envs, name='SafeAverageEpisodeLength')
+      ] + [tf_py_metric.TFPyMetric(m) for m in sc_metrics]
+      sc_tf_env = tf_py_environment.TFPyEnvironment(
+        parallel_py_environment.ParallelPyEnvironment(
+          [lambda: env_load_fn(env_name, gym_env_wrappers=gym_env_wrappers)] * n_envs
+        ))
     if seed:
       sc_tf_env.seed([seed + i for i in range(n_envs)])
 
@@ -338,8 +339,8 @@ def train_eval(
       load_root_dir = os.path.expanduser(load_root_dir)
       load_train_dir = os.path.join(load_root_dir, 'train')
       misc.load_agent_ckpt(load_train_dir, tf_agent)
-      #load_rb_ckpt_dir = os.path.join(load_train_dir, 'replay_buffer')
-      #misc.load_rb_ckpt(load_rb_ckpt_dir, replay_buffer)
+      load_rb_ckpt_dir = os.path.join(load_train_dir, 'replay_buffer')
+      misc.load_rb_ckpt(load_rb_ckpt_dir, replay_buffer)
       if online_critic:
         online_load_rb_ckpt_dir = os.path.join(load_train_dir, 'online_replay_buffer')
         misc.load_rb_ckpt(online_load_rb_ckpt_dir, online_replay_buffer)
