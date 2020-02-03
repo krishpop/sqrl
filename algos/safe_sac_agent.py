@@ -794,7 +794,7 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
 
     if not self._train_critic_online:
       # update safety critic
-      safe_rew = experience.observation['task_agn_rew']
+      safe_rew = next_time_steps.observation['task_agn_rew']
       sc_weights = (safe_rew / tf.reduce_mean(safe_rew+1e-16) + (1-safe_rew) / (tf.reduce_mean(1-safe_rew))) / 2
       safety_critic_loss, lambda_loss = self.train_sc(experience, safe_rew, sc_weights)
 

@@ -349,7 +349,12 @@ def train_eval(
       if online_critic:
         online_load_rb_ckpt_dir = os.path.join(load_train_dir, 'online_replay_buffer')
         misc.load_rb_ckpt(online_load_rb_ckpt_dir, online_replay_buffer)
-
+      # TODO: REMOVE THIS, HARDCODED
+      tf_agent._lambda_optimizer = tf.keras.optimizers.Adam(learning_rate=1e-5)
+      tf_agent._alpha_optimizer.learning_rate = 1e-5
+      tf_agent._safety_critic_optimizer.learning_rate = 1e-5
+      tf_agent._critic_optimizer.learning_rate = 1e-5
+      tf_agent._actor_optimizer.learning_rate = 1e-5
     if load_root_dir is None:
       train_checkpointer.initialize_or_restore()
       rb_checkpointer.initialize_or_restore()
@@ -488,7 +493,7 @@ def train_eval(
           sc_loss, lambda_loss = critic_train_step()  # pylint: disable=unused-variable
       tf_agent._safe_policy._safety_threshold = safety_eps
 
-    logging.debug('starting policy pretraining')
+    logging.debug('starting policy training')
     while (global_step.numpy() <= num_global_steps and not early_termination_fn()):
       start_time = time.time()
       current_step = global_step.numpy()
@@ -508,7 +513,8 @@ def train_eval(
       )
       if time_step.is_last() and agent_class == wcpg_agent.WcpgAgent:
         collect_policy._alpha = None
-      logging.debug('policy eval: {} sec'.format(time.time() - start_time))
+      if current_step % log_interval == 0:
+        logging.debug('policy eval: {} sec'.format(time.time() - start_time))
 
       # PERFORMS TRAIN STEP ON ALGORITHM (OFF-POLICY)
       train_time = time.time()
@@ -643,7 +649,8 @@ def train_eval(
         logging.debug('saved rollout at timestep {}, rollout length: {}, {} sec'.format(
             global_step_val, ep_len, time.time() - monitor_start))
 
-      logging.debug('iteration time: {} sec'.format(time.time() - start_time))
+      if current_step % log_interval == 0:
+        logging.debug('iteration time: {} sec'.format(time.time() - start_time))
 
   if not keep_rb_checkpoint:
     misc.cleanup_checkpoints(rb_ckpt_dir)
