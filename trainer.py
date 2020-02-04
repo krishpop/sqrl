@@ -313,7 +313,10 @@ def train_eval(
       collect_policy = tf_agent.collect_policy
       online_collect_policy = tf_agent._safe_policy if pretraining else tf_agent.collect_policy
 
-    initial_collect_policy = random_tf_policy.RandomTFPolicy(time_step_spec, action_spec)
+    if not load_root_dir:
+      initial_collect_policy = random_tf_policy.RandomTFPolicy(time_step_spec, action_spec)
+    else:
+      initial_collect_policy = collect_policy
     if agent_class == wcpg_agent.WcpgAgent:
       initial_collect_policy = agents.WcpgPolicyWrapper(initial_collect_policy)
 
@@ -343,18 +346,20 @@ def train_eval(
       load_root_dir = os.path.expanduser(load_root_dir)
       load_train_dir = os.path.join(load_root_dir, 'train')
       misc.load_agent_ckpt(load_train_dir, tf_agent) 
-      if len(os.listdir(os.path.join(load_train_dir, 'replay_buffer'))) > 1:
-        load_rb_ckpt_dir = os.path.join(load_train_dir, 'replay_buffer')
-        misc.load_rb_ckpt(load_rb_ckpt_dir, replay_buffer)
+      # if len(os.listdir(os.path.join(load_train_dir, 'replay_buffer'))) > 1:
+      #   load_rb_ckpt_dir = os.path.join(load_train_dir, 'replay_buffer')
+      #   misc.load_rb_ckpt(load_rb_ckpt_dir, replay_buffer)
       if online_critic:
         online_load_rb_ckpt_dir = os.path.join(load_train_dir, 'online_replay_buffer')
         misc.load_rb_ckpt(online_load_rb_ckpt_dir, online_replay_buffer)
       # TODO: REMOVE THIS, HARDCODED
-      tf_agent._lambda_optimizer = tf.keras.optimizers.Adam(learning_rate=1e-5)
-      tf_agent._alpha_optimizer.learning_rate = 1e-5
-      tf_agent._safety_critic_optimizer.learning_rate = 1e-5
-      tf_agent._critic_optimizer.learning_rate = 1e-5
-      tf_agent._actor_optimizer.learning_rate = 1e-5
+      lr = 5e-3
+      sac_lr = 5e-3
+      tf_agent._lambda_optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
+      tf_agent._alpha_optimizer.learning_rate = lr
+      tf_agent._safety_critic_optimizer.learning_rate = lr
+      tf_agent._critic_optimizer.learning_rate = tf.keras.optimizers.Adam(learning_rate=sac_lr)
+      tf_agent._actor_optimizer.learning_rate = tf.keras.optimizers.Adam(learning_rate=sac_lr)
     if load_root_dir is None:
       train_checkpointer.initialize_or_restore()
       rb_checkpointer.initialize_or_restore()
@@ -398,7 +403,7 @@ def train_eval(
     if eager_debug:
       tf.config.experimental_run_functions_eagerly(True)
 
-    if not rb_checkpointer.checkpoint_exists and load_rb_ckpt_dir is None: # and pretraining:
+    if not rb_checkpointer.checkpoint_exists: # and load_rb_ckpt_dir is None: # and pretraining:
       logging.info('Performing initial collection ...')
       initial_collect_driver_class(
           tf_env,
