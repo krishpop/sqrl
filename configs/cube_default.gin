@@ -16,6 +16,8 @@ EP_LEN = 100
 TRAIN_METRICS = [@metrics.AverageEarlyFailureMetric()]
 EVAL_METRICS = [@metrics.AverageEarlyFailureMetric()]
 ENV_METRIC_FACTORIES = [@metrics.CubeAverageScoreMetric]
+NUM_STEPS = 1500000
+
 metrics.AverageEarlyFailureMetric.max_episode_len = %EP_LEN
 cube_env.SafemrlCubeEnv.drop_penalty = -500.
 cube_env.SafemrlCubeEnv.goal_task = ('left', 'right', 'up', 'down')

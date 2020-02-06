@@ -13,7 +13,7 @@ from absl import logging
 
 # blacklist of config values to update with a loaded run config
 RUN_CONFIG_BLACKLIST = {'safety_gamma', 'target_safety', 'friction', 'drop_penalty',
-                        'target_entropy', 'env_str', 'root_dir', 'num_steps', 'finetune'}
+                        'target_entropy', 'root_dir', 'num_steps', 'finetune', 'debug_summaries'}
 
 # keys to exclude from wandb config
 FLAGS = flags.FLAGS
@@ -29,8 +29,9 @@ def define_flags():
   flags.DEFINE_string('load_dir', None, 'Directory for loading pretrained policy')
   flags.DEFINE_string('load_run', None, 'Loads wandb and gin configs from past run')
   flags.DEFINE_boolean('load_config', False, 'whether or not to load config with run')
-  flags.DEFINE_multi_string('gin_files', ["sqrl_point_mass.gin"],
+  flags.DEFINE_multi_string('gin_files', None,
                             'gin files to load')
+  flags.DEFINE_string('resume_id', None, 'enables loading config and everything from previous run')
   flags.DEFINE_multi_string('gin_param', None, 'params to add to gin_bindings')
 
   # Trainer args
@@ -51,12 +52,12 @@ def define_flags():
   flags.DEFINE_integer('batch_size', 256, 'batch size used for training')
 
   # Algorithm args
-  flags.DEFINE_float('lr', 3e-4, 'Learning rate for all optimizers')
+  flags.DEFINE_float('lr', None, 'Learning rate for all optimizers')
   flags.DEFINE_float('actor_lr', None, 'Learning rate for actor')
   flags.DEFINE_float('critic_lr', None, 'Learning rate for critic')
-  flags.DEFINE_float('target_update_tau', 0.001, 'Factor for soft update of the target networks')
+  flags.DEFINE_float('target_update_tau', 0.005, 'Factor for soft update of the target networks')
   flags.DEFINE_integer('target_update_period', 1, 'Period for soft update of the target networks')
-  flags.DEFINE_float('gamma', 0.99, 'Future reward discount factor')
+  flags.DEFINE_float('gamma', 1., 'Future reward discount factor')
   flags.DEFINE_float('reward_scale_factor', 1.0, 'Reward scale factor for SacAgent')
   flags.DEFINE_float('gradient_clipping', None, 'Gradient clipping factor for SacAgent')
   ## SAC args
@@ -77,8 +78,8 @@ def define_flags():
   ## CubeEnv
   flags.DEFINE_float('drop_penalty', -500., 'Drop penalty for cube environment')
   ## PointMass
-  flags.DEFINE_float('action_noise', 0.1, 'Action noise for point-mass environment')
-  flags.DEFINE_float('action_scale', 0.5, 'Action scale for point-mass environment')
+  flags.DEFINE_float('action_noise', None, 'Action noise for point-mass environment')
+  flags.DEFINE_float('action_scale', None, 'Action scale for point-mass environment')
 
 
 define_flags()
@@ -93,7 +94,7 @@ def load_prev_run(config):
   load_path = osp.join(exp_dir, root_dir)
   assert osp.exists(load_path), 'tried to load path the does not exist: {}'.format(load_path)
   op_config = os.path.join(load_path, 'train/operative_config-0.gin')
-  if not wandb.run.resumed:
+  if not wandb.run.resumed or FLAGS.finetune:
     config.update(dict(gin_files=run.config['gin_files'] + [op_config]), allow_val_change=True)
   else:
     gin.parse_config_file(op_config)
@@ -197,8 +198,8 @@ def gin_bindings_from_config(config, gin_bindings=[]):
     gin_bindings.append("INITIAL_NUM_STEPS = {}".format(config.initial_collect_steps))
   if config.env_str:
     gin_bindings.append('ENV_STR = "{}"'.format(config.env_str))
-  if config.num_steps:
-    gin_bindings.append('NUM_STEPS = {}'.format(config.num_steps))
+  if FLAGS.num_steps:
+    gin_bindings.append('NUM_STEPS = {}'.format(FLAGS.num_steps))
   if config.layer_size and not wandb.run.resumed:
     gin_bindings.append('LAYER_SIZE = {}'.format(config.layer_size))
   return gin_bindings
@@ -212,7 +213,8 @@ def wandb_log_callback(summaries, step=None):
 
 def main(_):
   run = wandb.init(name=FLAGS.name, sync_tensorboard=True, entity='krshna', project='safemrl-2', config=FLAGS,
-                   monitor_gym=FLAGS.monitor, config_exclude_keys=EXCLUDE_KEYS, notes=FLAGS.notes)
+                   monitor_gym=FLAGS.monitor, config_exclude_keys=EXCLUDE_KEYS, notes=FLAGS.notes,
+                   resume=FLAGS.resume_id)
 
   logging.set_verbosity(logging.INFO)
   if FLAGS.debug:
@@ -232,12 +234,12 @@ def main(_):
 
   gin_bindings = FLAGS.gin_param or []
 
-  if not wandb.run.resumed or config.finetune:
-    for gin_file in config.gin_files:
-      gin.parse_config_file(gin_file, [])
+  # if not wandb.run.resumed or config.finetune:
+  for gin_file in config.gin_files:
+    gin.parse_config_file(gin_file, [])
 
-    gin_bindings = gin_bindings_from_config(config) + gin_bindings
-    gin.parse_config_files_and_bindings([], gin_bindings)
+  gin_bindings = gin_bindings_from_config(config) + gin_bindings
+  gin.parse_config_files_and_bindings([], gin_bindings)
 
   if FLAGS.num_threads:
     tf.config.threading.set_inter_op_parallelism_threads(FLAGS.num_threads)

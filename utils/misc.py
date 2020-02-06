@@ -224,4 +224,4 @@ def extract_observation_layer():
 @gin.configurable
 def monitor_freq(freq=100, vid_dir='./videos'):
   return functools.partial(Monitor, video_callable=lambda x: (x%freq) == 0,
-                           directory=vid_dir)
+                           directory=vid_dir, force=True)

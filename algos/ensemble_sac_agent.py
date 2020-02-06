@@ -200,6 +200,9 @@ class EnsembleSacAgent(tf_agent.TFAgent):
     #                                 tf.ones((batch_size,)))
     #experience = nest_utils.fast_map_structure(lambda t: t[boundary_mask], experience)
 
+    boundary_mask = tf.logical_not(experience.is_boundary()[:, 0])
+    experience = nest_utils.fast_map_structure(lambda *x: tf.boolean_mask(*x, boundary_mask), experience)
+
     transitions = trajectory.to_transition(experience)
     time_steps, policy_steps, next_time_steps = transitions
     actions = policy_steps.action
@@ -385,11 +388,12 @@ class EnsembleSacAgent(tf_agent.TFAgent):
       target_input = (next_time_steps.observation, next_actions)
       target_q_values = []
       for tcn in self._target_critic_networks:
-        target_q_values1, unused_network_state1 = tcn(
+        target_q_values1, _ = tcn(
             target_input, next_time_steps.step_type, training=False)
         target_q_values.append(target_q_values1)
 
-      target_q_values = tf.reduce_min(target_q_values) # - tf.exp(self._log_alpha) * next_log_pis
+      target_q_values = tfp.stats.percentile(target_q_values, 0.3, axis=0)
+      # target_q_values = tf.reduce_min(target_q_values)  # - tf.exp(self._log_alpha) * next_log_pis
 
       td_targets = tf.stop_gradient(
           reward_scale_factor * next_time_steps.reward +
@@ -441,7 +445,7 @@ class EnsembleSacAgent(tf_agent.TFAgent):
         target_q_values1, _ = cn(target_input, time_steps.step_type)
         target_q_values.append(target_q_values1)
       target_q_values = tf.reduce_min(target_q_values)
-      actor_loss = tf.exp(self._log_alpha) * log_pi - target_q_values
+      actor_loss = tf.exp(self._log_alpha) * log_pi - target_q_values  # -> max (min_i (Q_i(s,a)))
       if weights is not None:
         actor_loss *= weights
       actor_loss = tf.reduce_mean(input_tensor=actor_loss)

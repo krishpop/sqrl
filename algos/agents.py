@@ -553,7 +553,7 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
                clip=True,
                resample_counter=None,
                resample_n=50,
-               resample_k=5,
+               resample_k=1,
                training=False,
                name=None):
     super(SafeActorPolicyRSVar,
@@ -574,7 +574,7 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
                                                 time_step.step_type,
                                                 policy_state,
                                                 training=self._training)
-    if has_batch_dim or self._training:  # returns normal actions, unmasked, when not training
+    if has_batch_dim or not self._training:  # returns normal actions, unmasked, when not training
       return actions, policy_state
 
     # samples "best" safe action out of 50
@@ -596,7 +596,7 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
     safe_ac_idx = tf.where(fail_prob < self._safety_threshold)
 
     resample_count = 0
-    while self._training and resample_count < k and not safe_ac_idx.shape.as_list()[0]:
+    while resample_count < k and not safe_ac_idx.shape.as_list()[0]:
       if self._resample_counter is not None:
         self._resample_counter()
       resample_count += 1
@@ -617,19 +617,25 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
       safe_ac_idx = tf.where(fail_prob < self._safety_threshold)
     # logging.debug('resampled {} times, {} seconds'.format(resample_count, time.time() - start_time))
     sampled_ac = ac_batch_squash.unflatten(sampled_ac)
-    if None in safe_ac_idx.shape.as_list() or not np.prod(safe_ac_idx.shape.as_list()):
+    if None in safe_ac_idx.shape.as_list() or 0 in safe_ac_idx.shape.as_list():
+      # logging.info('could not find safe action, choosing safest action at pfail={}'.format(tf.reduce_min(fail_prob)))
+      if self._resample_counter is not None:
+        self._resample_counter()
       safe_idx = tf.argmin(fail_prob)  # return action closest to fail prob eps
     else:
       sampled_ac = tf.gather(sampled_ac, safe_ac_idx)
-      fail_prob_safe = tf.gather(fail_prob, tf.squeeze(safe_ac_idx))
+      fail_prob_safe = tf.gather(fail_prob, safe_ac_idx[:,0])
       if self._training:
         safe_idx = tf.argmax(fail_prob_safe)  # picks most unsafe action out of "safe" options
       else:
         # picks random safe_action
-        log_prob = common.log_probability(actions, sampled_ac, self.action_spec)
-        safe_idx = tfp.distributions.Categorical(log_prob).sample()
+        if tf.rank([fail_prob_safe]) < 1:
+          return actions, policy_state
+        safe_idx = tfp.distributions.Categorical([1 - fail_prob_safe]).sample()
+        # log_prob = common.log_probability(actions, sampled_ac, self.action_spec)
+        # safe_idx = tfp.distributions.Categorical(log_prob).sample()
         safe_idx = tf.reshape(safe_idx, [-1])[0]
-        # safe_idx = tf.argmin(fail_prob_safe)[0]  # picks the safest action
+        # safe_idx = tf.argmin(fail_prob_safe)  # picks the safest action
     ac = sampled_ac[safe_idx]
     assert ac.shape.as_list()[0] == 1, 'action shape is not correct: {}'.format(ac.shape.as_list())
     return ac, policy_state

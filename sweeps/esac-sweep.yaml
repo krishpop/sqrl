@@ -1,0 +1,23 @@
+name: esac_sweep
+program: run_experiment.py
+method: bayes
+metric:
+  name: AverageReturn
+  goal: max
+early_terminate:
+  type: hyperband
+  min_iter: 1000
+parameters:
+  lr:
+    distribution: categorical
+    values: [3e-4, 3e-5, 3e-3]
+  n_critics:
+    distribution: categorical
+    values: [10, 30]
+  layer_size:
+    value: 64
+  target_entropy:
+    distribution: categorical
+    values: [-16, -32]  # LOW ENTROPY BONUS IN OBJECTIVE
+  num_steps:
+    value: 150000

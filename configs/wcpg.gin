@@ -13,6 +13,7 @@ include 'sac.gin'
 LEARNING_RATE = 3e-4
 CRITIC_LR = 1e-4
 AGENT_CLASS = 'wcpg'
+ENV_WRAPPERS = []
 
 trainer.train_eval.gym_env_wrappers = []
 

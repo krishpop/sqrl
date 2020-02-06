@@ -44,7 +44,7 @@ from safemrl.algos import agents
 
 SafeSacLossInfo = collections.namedtuple(
     'SafeSacLossInfo',
-    ('critic_loss', 'safety_critic_loss', 'actor_loss', 'alpha_loss'))
+    ('critic_loss', 'safety_critic_loss', 'actor_loss', 'alpha_loss', 'lambda_loss'))
 
 
 @gin.configurable
@@ -710,6 +710,7 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
                                           trainable_safety_variables)
       self._apply_gradients(safety_critic_grads, trainable_safety_variables,
                             self._safety_critic_optimizer)
+
     lambda_variable = [self._log_lambda]
     with tf.GradientTape(watch_accessed_variables=False) as tape:
       assert lambda_variable, 'No lambda to optimize'
@@ -719,9 +720,10 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
           actions,
           safety_rewards=next_time_steps.observation['task_agn_rew'])
     tf.debugging.check_numerics(lambda_loss, 'Lambda loss is inf or nan.')
-    lambda_grads = tape.gradient(lambda_loss, lambda_variable)
-    self._apply_gradients(lambda_grads, lambda_variable, self._lambda_optimizer)
-    with tf.name_scope('Losses'):
+    if training:
+      lambda_grads = tape.gradient(lambda_loss, lambda_variable)
+      self._apply_gradients(lambda_grads, lambda_variable, self._lambda_optimizer)
+    with tf.name_scope('Train_Sc_Losses'):
       tf.compat.v2.summary.scalar(
           name='lambda_loss', data=lambda_loss, step=self.train_step_counter)
       tf.compat.v2.summary.scalar(
@@ -797,6 +799,8 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
       safe_rew = next_time_steps.observation['task_agn_rew']
       sc_weights = (safe_rew / tf.reduce_mean(safe_rew+1e-16) + (1-safe_rew) / (tf.reduce_mean(1-safe_rew))) / 2
       safety_critic_loss, lambda_loss = self.train_sc(experience, safe_rew, sc_weights)
+    else:
+      safety_critic_loss, lambda_loss = None, None
 
     with tf.name_scope('Losses'):
       tf.compat.v2.summary.scalar(
@@ -820,7 +824,8 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
 
     if not self._train_critic_online:
       extra = SafeSacLossInfo(
-          critic_loss=critic_loss, actor_loss=actor_loss, alpha_loss=alpha_loss, safety_critic_loss=safety_critic_loss)
+          critic_loss=critic_loss, actor_loss=actor_loss, alpha_loss=alpha_loss,
+          safety_critic_loss=safety_critic_loss, lambda_loss=lambda_loss)
     else:
       extra = sac_agent.SacLossInfo(critic_loss=critic_loss, actor_loss=actor_loss,
                                     alpha_loss=alpha_loss)
@@ -1073,7 +1078,7 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
         q_safe = tf.nn.sigmoid(q_val)  # rates safety of current actions
         actor_loss = (
                 tf.exp(self._log_alpha) * log_pi - target_q_values +
-                tf.exp(self._log_lambda) * (self._target_safety - q_safe))
+                tf.exp(self._log_lambda) * (q_safe - self._target_safety))
       else:
         actor_loss = tf.exp(self._log_alpha) * log_pi - target_q_values
       if weights is not None:

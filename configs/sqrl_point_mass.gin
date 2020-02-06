@@ -27,7 +27,7 @@ point_mass.env_load_fn.resize_factor = (1, 1)
 point_mass.PointMassEnv.action_scale = 1.
 point_mass.PointMassEnv.action_noise = 0.
 
-point_mass.TimeLimitBonus.early_term_penalty = 1.
+point_mass.TimeLimitBonus.early_term_penalty = 0.
 point_mass.TimeLimitBonus.early_term_bonus = 1.
 # point_mass.TimeLimitBonus.time_limit_penalty = %EP_LEN
 

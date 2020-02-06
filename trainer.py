@@ -22,6 +22,7 @@ from __future__ import print_function
 import collections
 import math
 import os
+import os.path as osp
 import time
 
 from absl import logging
@@ -282,10 +283,10 @@ def train_eval(
     logging.debug('ReplayBuffer Collect data spec: %s', collect_data_spec)
 
     agent_observers = [replay_buffer.add_batch]
-    if online_critic:
+    if agent_class in SAFETY_AGENTS:  # online_critic:
       online_replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
-          collect_data_spec, batch_size=1, max_length=max_episode_len*num_eval_episodes)
-      agent_observers.append(online_replay_buffer.add_batch)
+          collect_data_spec, batch_size=1, max_length=max_episode_len*num_eval_episodes, dataset_window_shift=1)
+      agent_observers.append(online_replay_buffer.add_batch)  # collect_driver will add to critic rb
 
       online_rb_ckpt_dir = os.path.join(train_dir, 'online_replay_buffer')
       online_rb_checkpointer = common.Checkpointer(
@@ -345,21 +346,22 @@ def train_eval(
     if load_root_dir:
       load_root_dir = os.path.expanduser(load_root_dir)
       load_train_dir = os.path.join(load_root_dir, 'train')
-      misc.load_agent_ckpt(load_train_dir, tf_agent) 
+      misc.load_agent_ckpt(load_train_dir, tf_agent)
       # if len(os.listdir(os.path.join(load_train_dir, 'replay_buffer'))) > 1:
       #   load_rb_ckpt_dir = os.path.join(load_train_dir, 'replay_buffer')
       #   misc.load_rb_ckpt(load_rb_ckpt_dir, replay_buffer)
-      if online_critic:
-        online_load_rb_ckpt_dir = os.path.join(load_train_dir, 'online_replay_buffer')
+      online_load_rb_ckpt_dir = os.path.join(load_train_dir, 'online_replay_buffer')
+      if osp.exists(online_load_rb_ckpt_dir):
         misc.load_rb_ckpt(online_load_rb_ckpt_dir, online_replay_buffer)
       # TODO: REMOVE THIS, HARDCODED
       lr = 5e-3
-      sac_lr = 5e-3
+      sac_lr = 3e-4
       tf_agent._lambda_optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
       tf_agent._alpha_optimizer.learning_rate = lr
-      tf_agent._safety_critic_optimizer.learning_rate = lr
-      tf_agent._critic_optimizer.learning_rate = tf.keras.optimizers.Adam(learning_rate=sac_lr)
-      tf_agent._actor_optimizer.learning_rate = tf.keras.optimizers.Adam(learning_rate=sac_lr)
+      if agent_class in SAFETY_AGENTS:
+        tf_agent._safety_critic_optimizer.learning_rate = lr
+      tf_agent._critic_optimizer = tf.keras.optimizers.Adam(learning_rate=sac_lr)
+      tf_agent._actor_optimizer = tf.keras.optimizers.Adam(learning_rate=sac_lr)
     if load_root_dir is None:
       train_checkpointer.initialize_or_restore()
       rb_checkpointer.initialize_or_restore()
@@ -413,7 +415,7 @@ def train_eval(
       # initial_collect_driver.run()
       last_id = replay_buffer._get_last_id()  # pylint: disable=protected-access
       logging.info('Data saved after initial collection: %d steps', last_id)
-      if online_critic:
+      if agent_class in SAFETY_AGENTS:
         last_id = online_replay_buffer._get_last_id()  # pylint: disable=protected-access
         logging.debug('Data saved in online buffer after initial collection: %d steps', last_id)
 
@@ -441,18 +443,17 @@ def train_eval(
     dataset = replay_buffer.as_dataset(
         num_parallel_calls=3, sample_batch_size=batch_size, num_steps=2).prefetch(3)
     iterator = iter(dataset)
-    if online_critic:
+    if agent_class in SAFETY_AGENTS:
       online_dataset = online_replay_buffer.as_dataset(
           num_parallel_calls=3, sample_batch_size=batch_size, num_steps=2).prefetch(3)
       online_iterator = iter(online_dataset)
       critic_metrics = [tf.keras.metrics.AUC(name='safety_critic_auc'),
-                       tf.keras.metrics.TruePositives(name='safety_critic_tp'),
-                       tf.keras.metrics.FalsePositives(name='safety_critic_fp'),
-                       tf.keras.metrics.TrueNegatives(name='safety_critic_tn'),
-                       tf.keras.metrics.FalseNegatives(name='safety_critic_fn'),
-                       tf.keras.metrics.BinaryAccuracy(name='safety_critic_acc')]
+                       tf.keras.metrics.TruePositives(name='safety_critic_tp', thresholds=[tf_agent._target_safety, 0.5]),
+                       tf.keras.metrics.FalsePositives(name='safety_critic_fp', thresholds=[tf_agent._target_safety, 0.5]),
+                       tf.keras.metrics.TrueNegatives(name='safety_critic_tn', thresholds=[tf_agent._target_safety, 0.5]),
+                       tf.keras.metrics.FalseNegatives(name='safety_critic_fn', thresholds=[tf_agent._target_safety, 0.5]),
+                       tf.keras.metrics.BinaryAccuracy(name='safety_critic_acc', threshold=tf_agent._target_safety)]
       rb_rewards = None
-      
       @common.function
       def critic_train_step():
         """Builds critic training step."""
@@ -497,6 +498,11 @@ def train_eval(
         for _ in range(train_sc_steps):
           sc_loss, lambda_loss = critic_train_step()  # pylint: disable=unused-variable
       tf_agent._safe_policy._safety_threshold = safety_eps
+      critic_results = []
+      for critic_metric in critic_metrics:
+        critic_results.append((critic_metric.name, critic_metric.result().numpy()))
+        critic_metric.reset_states()
+      train_metrics_callback(collections.OrderedDict(critic_results), step=global_step.numpy())
 
     logging.debug('starting policy training')
     while (global_step.numpy() <= num_global_steps and not early_termination_fn()):
@@ -532,18 +538,25 @@ def train_eval(
       if train_metrics_callback is not None:
         train_metrics_callback(
           collections.OrderedDict([(k, v.numpy()) for k, v in train_loss.extra._asdict().items()]),
-          step=current_step)
+          step=global_step.numpy())
         train_metrics_callback(
-          {'train_loss': mean_train_loss.result().numpy()}, step=current_step)
+          {'train_loss': mean_train_loss.result().numpy()}, step=global_step.numpy())
 
       # TRAIN (or evaluate) SAFETY CRITIC
-      if online_critic and current_step % train_sc_interval == 0:
+      if agent_class in SAFETY_AGENTS and current_step % train_sc_interval == 0 and current_step < 500000:
           batch_time_step = sc_tf_env.reset()
           batch_policy_state = online_collect_policy.get_initial_state(sc_tf_env.batch_size)
-          online_driver.run(time_step=batch_time_step, policy_state=batch_policy_state)
+          if online_critic:
+            online_driver.run(time_step=batch_time_step, policy_state=batch_policy_state)
           # rb_rewards = misc.process_replay_buffer(online_replay_buffer, as_tensor=True)
-          for _ in range(train_sc_steps):
+          for _ in range(train_sc_steps):  # does 1 epoch of 10 * 256 samples
             sc_loss, lambda_loss = critic_train_step()  # pylint: disable=unused-variable
+
+          critic_results = []
+          for critic_metric in critic_metrics:
+            critic_results.append((critic_metric.name, critic_metric.result().numpy()))
+            critic_metric.reset_states()
+          train_metrics_callback(collections.OrderedDict(critic_results), step=global_step.numpy())
 
           sc_results = [('sc_loss', sc_loss.numpy()), ('lambda_loss', lambda_loss.numpy())]
           metric_utils.log_metrics(sc_metrics)
@@ -551,11 +564,11 @@ def train_eval(
             for sc_metric in sc_metrics:
               sc_metric.tf_summaries(
                 train_step=global_step, step_metrics=sc_metrics[:2])
+              sc_results.append((sc_metric.name, sc_metric.result().numpy()))
             tf.compat.v2.summary.scalar(
               name='resample_ac_freq', data=resample_ac_freq, step=global_step)
-            sc_results.append((sc_metric.name, sc_metric.result().numpy()))
           if train_metrics_callback:
-            train_metrics_callback(collections.OrderedDict(sc_results), step=current_step)
+            train_metrics_callback(collections.OrderedDict(sc_results), step=global_step.numpy())
 
       total_loss = mean_train_loss.result()
       mean_train_loss.reset_states()
@@ -600,10 +613,6 @@ def train_eval(
           env_metric.tf_summaries(
             train_step=global_step, step_metrics=train_metrics[:2])
           train_results.append((env_metric.name, env_metric.result().numpy()))
-      if online_critic:
-        for critic_metric in critic_metrics:
-          train_results.append((critic_metric.name, critic_metric.result().numpy()))
-          critic_metric.reset_states()
       if train_metrics_callback is not None:
         train_metrics_callback(collections.OrderedDict(train_results), step=global_step.numpy())
 
@@ -617,7 +626,7 @@ def train_eval(
           safety_critic_checkpointer.save(global_step=global_step_val)
 
       if rb_checkpoint_interval and global_step_val % rb_checkpoint_interval == 0:
-        if online_critic:
+        if agent_class in SAFETY_AGENTS:
           online_rb_checkpointer.save(global_step=global_step_val)
         rb_checkpointer.save(global_step=global_step_val)
       elif online_critic:

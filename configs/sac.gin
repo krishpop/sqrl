@@ -12,7 +12,7 @@ include 'networks.gin'
 
 NUM_ENVS = 1
 NUM_EVAL = 30
-NUM_STEPS = 1000000
+NUM_STEPS = 500000
 LEARNING_RATE = 3e-4
 SLOW_LEARNING_RATE = 1e-5
 AGENT_CLASS = 'sac'
@@ -38,7 +38,7 @@ trainer.train_eval.num_eval_episodes = %NUM_EVAL
 
 agents.normal_projection_net.scale_distribution = True
 
-sac_agent.SacAgent.target_update_tau = 0.005
+sac_agent.SacAgent.target_update_tau = 0.01
 sac_agent.SacAgent.reward_scale_factor = 1.0
 sac_agent.SacAgent.actor_optimizer = @ac_opt/tf.keras.optimizers.Adam()
 ac_opt/tf.keras.optimizers.Adam.learning_rate = %LEARNING_RATE
