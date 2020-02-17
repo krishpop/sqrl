@@ -104,6 +104,26 @@ class AverageFallenMetric(py_metrics.StreamingMetric):
 
 
 @gin.configurable
+class TotalFallenMetric(py_metrics.CounterMetric):
+  def __init__(self, name='TotalFallen'):
+    super(TotalFallenMetric, self).__init__(name)
+
+  def call(self, trajectory):
+    if trajectory.is_boundary():
+      self._np_state.count += 1. * trajectory.observation['fallen'][0]
+
+
+@gin.configurable
+class TotalSuccessMetric(py_metrics.CounterMetric):
+  def __init__(self, name='TotalSuccess'):
+    super(TotalSuccessMetric, self).__init__(name)
+
+  def call(self, trajectory):
+    if trajectory.is_last():
+      self._np_state.count += 1 * (trajectory.reward > 1.)[0]
+
+
+@gin.configurable
 class AverageSuccessMetric(py_metrics.StreamingMetric):
   """Computes average success rate for PointMass env in buffer_size episodes."""
 

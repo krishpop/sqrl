@@ -133,7 +133,7 @@ class MinitaurGoalVelocityEnv(minitaur_extended_env.MinitaurExtendedEnv):
 
     reward = 0.0
     reward += 1.0 * velocity_reward
-    reward -= 0.01 * action_acceleration_penalty  # TODO(krshna): lowering acceleration penalty, try 0.01, 0.002
+    reward -= 0.01 * action_acceleration_penalty  # TODO: lowering acceleration penalty, try 0.01, 0.002
 
     if self._debug:
       self.pybullet_client.addUserDebugText('Current velocity: {:3.2f}'.format(

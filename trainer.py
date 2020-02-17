@@ -101,7 +101,7 @@ def train_eval(
     train_sc_interval=1000,
     online_critic=False,
     n_envs=None,
-    finetune_sc=True,
+    finetune_sc=False,
     pretraining=True,
     # Ensemble Critic training args
     n_critics=30,
@@ -150,6 +150,9 @@ def train_eval(
   updating_sc = online_critic and (not load_root_dir or finetune_sc)
   logging.debug('updating safety critic: {}'.format(updating_sc))
 
+  if seed:
+    tf.compat.v1.set_random_seed(seed)
+
   if agent_class in SAFETY_AGENTS:
     sc_dir = os.path.join(root_dir, 'sc')
     if online_critic:
@@ -164,7 +167,11 @@ def train_eval(
           [lambda: env_load_fn(env_name, gym_env_wrappers=gym_env_wrappers)] * n_envs
         ))
     if seed:
-      sc_tf_env.seed([seed + i for i in range(n_envs)])
+      try:
+        for i, pyenv in enumerate(sc_tf_env.pyenv.envs):
+          pyenv.seed(seed * n_envs + i)
+      except:
+        pass
 
   if run_eval:
     eval_dir = os.path.join(root_dir, 'eval')
@@ -179,7 +186,11 @@ def train_eval(
         [lambda: env_load_fn(env_name, gym_env_wrappers=gym_env_wrappers)] * n_envs
       ))
     if seed:
-      eval_tf_env.seed([seed + n_envs + i for i in range(n_envs)])
+      try:
+        for i, pyenv in enumerate(eval_tf_env.pyenv.envs):
+          pyenv.seed(seed * n_envs + i)
+      except:
+        pass
   elif 'Drunk' in env_name:
     # Just visualizes trajectories
     eval_tf_env = tf_py_environment.TFPyEnvironment(env_load_fn(env_name))
@@ -200,7 +211,11 @@ def train_eval(
     py_env = env_load_fn(env_name, gym_env_wrappers=gym_env_wrappers)
     tf_env = tf_py_environment.TFPyEnvironment(py_env)
     if seed:
-      tf_env.seed(seed + 2*n_envs + i for i in range(n_envs))
+      try:
+        for i, pyenv in enumerate(tf_env.pyenv.envs):
+          pyenv.seed(seed * n_envs + i)
+      except:
+        pass
     time_step_spec = tf_env.time_step_spec()
     observation_spec = time_step_spec.observation
     action_spec = tf_env.action_spec()
@@ -356,12 +371,15 @@ def train_eval(
       # TODO: REMOVE THIS, HARDCODED
       lr = 5e-3
       sac_lr = 3e-4
-      tf_agent._lambda_optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
-      tf_agent._alpha_optimizer.learning_rate = lr
+      if agent_class in SAFETY_AGENTS:
+        tf_agent._lambda_optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
+      if agent_class != wcpg_agent.WcpgAgent:
+        tf_agent._alpha_optimizer.learning_rate = lr
       if agent_class in SAFETY_AGENTS:
         tf_agent._safety_critic_optimizer.learning_rate = lr
-      tf_agent._critic_optimizer = tf.keras.optimizers.Adam(learning_rate=sac_lr)
-      tf_agent._actor_optimizer = tf.keras.optimizers.Adam(learning_rate=sac_lr)
+      if agent_class != ensemble_sac_agent.EnsembleSacAgent:
+        tf_agent._critic_optimizer = tf.keras.optimizers.Adam(learning_rate=sac_lr)
+        tf_agent._actor_optimizer = tf.keras.optimizers.Adam(learning_rate=sac_lr)
     if load_root_dir is None:
       train_checkpointer.initialize_or_restore()
       rb_checkpointer.initialize_or_restore()
@@ -502,7 +520,8 @@ def train_eval(
       for critic_metric in critic_metrics:
         critic_results.append((critic_metric.name, critic_metric.result().numpy()))
         critic_metric.reset_states()
-      train_metrics_callback(collections.OrderedDict(critic_results), step=global_step.numpy())
+      if train_metrics_callback:
+        train_metrics_callback(collections.OrderedDict(critic_results), step=global_step.numpy())
 
     logging.debug('starting policy training')
     while (global_step.numpy() <= num_global_steps and not early_termination_fn()):
@@ -543,7 +562,7 @@ def train_eval(
           {'train_loss': mean_train_loss.result().numpy()}, step=global_step.numpy())
 
       # TRAIN (or evaluate) SAFETY CRITIC
-      if agent_class in SAFETY_AGENTS and current_step % train_sc_interval == 0 and current_step < 500000:
+      if agent_class in SAFETY_AGENTS and current_step % train_sc_interval == 0 and (pretraining or finetune_sc):
           batch_time_step = sc_tf_env.reset()
           batch_policy_state = online_collect_policy.get_initial_state(sc_tf_env.batch_size)
           if online_critic:
@@ -556,7 +575,8 @@ def train_eval(
           for critic_metric in critic_metrics:
             critic_results.append((critic_metric.name, critic_metric.result().numpy()))
             critic_metric.reset_states()
-          train_metrics_callback(collections.OrderedDict(critic_results), step=global_step.numpy())
+          if train_metrics_callback is not None:
+            train_metrics_callback(collections.OrderedDict(critic_results), step=global_step.numpy())
 
           sc_results = [('sc_loss', sc_loss.numpy()), ('lambda_loss', lambda_loss.numpy())]
           metric_utils.log_metrics(sc_metrics)

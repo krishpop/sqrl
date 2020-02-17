@@ -14,7 +14,9 @@ NUM_STEPS = 500000
 
 TRAIN_METRICS = [
     @metrics.AverageSuccessMetric(),
-    @metrics.AverageFallenMetric()
+    @metrics.AverageFallenMetric(),
+    @metrics.TotalFallenMetric(),
+    @metrics.TotalSuccessMetric()
 ]
 
 EVAL_METRICS = [

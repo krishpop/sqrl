@@ -46,6 +46,7 @@ metrics.AverageEarlyFailureMetric.batch_size = 1
 safe_sac_agent.SafeSacAgentOnline.reward_scale_factor = 1.0
 safe_sac_agent.SafeSacAgentOnline.gamma = 0.99
 safe_sac_agent.SafeSacAgentOnline.target_update_tau = 0.005
+safe_sac_agent.SafeSacAgentOnline.target_update_period = 1
 safe_sac_agent.SafeSacAgentOnline.safety_pretraining = True
 safe_sac_agent.SafeSacAgentOnline.target_safety = 0.1
 safe_sac_agent.SafeSacAgentOnline.safety_gamma = 0.7
@@ -73,4 +74,4 @@ collect_driver/dynamic_step_driver.DynamicStepDriver.num_steps = 1
 safe_sac_agent.SafeSacAgentOnline.resample_counter = @resample_counter/py_metrics.CounterMetric()
 cm/py_metrics.CounterMetric.name = "unsafe_ac_samples"
 
-agents.normal_projection_net.scale_distribution = True
+agents.normal_projection_net.scale_distribution = False

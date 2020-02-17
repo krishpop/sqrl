@@ -80,7 +80,7 @@ def load_agent_ckpt(ckpt_dir, tf_agent, global_step=None):
     global_step = tf.compat.v1.train.get_or_create_global_step()
   train_checkpointer = common.Checkpointer(
       ckpt_dir=ckpt_dir, agent=tf_agent, global_step=global_step)
-  train_checkpointer.initialize_or_restore().assert_existing_objects_matched()
+  train_checkpointer.initialize_or_restore()
   return tf_agent, global_step
 
 
@@ -179,7 +179,7 @@ def process_replay_buffer(replay_buffer, max_ep_len=500, k=1, as_tensor=True):
   k_labels = []
 
   for term_idx in boundary_idx:
-    # TODO(krshna): remove +1?
+    # TODO: remove +1?
     fail = 1 - int(term_idx - last_idx >= max_ep_len + 1)
     ep_rew = tf.gather(rew, np.arange(last_idx, term_idx), axis=1)
     labels = np.zeros(ep_rew.shape_as_list())  # ignore obs dim

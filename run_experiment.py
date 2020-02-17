@@ -212,7 +212,10 @@ def wandb_log_callback(summaries, step=None):
 
 
 def main(_):
-  run = wandb.init(name=FLAGS.name, sync_tensorboard=True, entity='krshna', project='safemrl-2', config=FLAGS,
+  name = FLAGS.name
+  if FLAGS.seed is not None and name:
+    name = '-'.join([name, str(FLAGS.seed)])
+  run = wandb.init(name=name, sync_tensorboard=True, entity='krshna', project='safemrl-2', config=FLAGS,
                    monitor_gym=FLAGS.monitor, config_exclude_keys=EXCLUDE_KEYS, notes=FLAGS.notes,
                    resume=FLAGS.resume_id)
 

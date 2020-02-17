@@ -77,7 +77,7 @@ class SafeDynamicEpisodeDriver(dynamic_episode_driver.DynamicEpisodeDriver):
       """
       action_step = self.policy.action(time_step, policy_state)
 
-      # TODO(b/134487572): TF2 while_loop seems to either ignore
+      # TODO: TF2 while_loop seems to either ignore
       # parallel_iterations or doesn't properly propagate control dependencies
       # from one step to the next. Without this dep, self.env.step() is called
       with tf.control_dependencies(tf.nest.flatten([time_step])):

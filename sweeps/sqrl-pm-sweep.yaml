@@ -1,0 +1,38 @@
+name: sqrl_pm_pretrain
+program: run_experiment.py
+#method: bayes
+method: grid
+metric:
+  name: AverageReturn
+  goal: max
+#early_terminate:
+#  type: hyperband
+#  min_iter: 100
+parameters:
+  gin_files:
+    value: ["sqrl_point_mass.gin"]
+  finetune:
+    value: False
+  root_dir:
+    value: "sqrl/point_mass"
+  seed:
+    distribution: categorical
+    values: [0, 1, 2, 3, 4]
+  name:
+    value: "sqrl-pm-seed"
+#  lr:
+#    distribution: categorical
+#    values: [3e-4, 3e-5, 3e-3]
+#  safety_gamma:
+#    distribution: q_uniform
+#    min: 0.4
+#    max: 0.7
+#    q: 0.05
+#  target_safety:
+#    distribution: q_uniform
+#    min: 0.05
+#    max: 0.15
+#    q: 0.025
+#  target_entropy:
+#    distribution: categorical
+#    values: [-100, -25, -12, -4]

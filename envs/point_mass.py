@@ -233,7 +233,7 @@ class PointMassEnv(gym.Env):
     rew = 0
     fallen = False
     task_agn = 0.
-    for _ in np.linspace(0, 1, num_substeps):
+    for _ in range(num_substeps):
       for axis in range(num_axis):
         new_state = self.state.copy()
         new_state[axis] += dt * action[axis]
