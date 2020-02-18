@@ -228,12 +228,12 @@ def train_eval(
     if agent_class == wcpg_agent.WcpgAgent:
       alpha_spec = tensor_spec.BoundedTensorSpec(shape=(1,), dtype=tf.float32, minimum=0., maximum=1.,
                                                  name='alpha')
-      input_tensor_spec = (observation_spec, action_spec, alpha_spec)
+      input_tensor_spec = (observation_spec['observation'], action_spec, alpha_spec)
       logging.debug('input_tensor_spec: %s', input_tensor_spec)
       critic_net = agents.DistributionalCriticNetwork(
         input_tensor_spec, preprocessing_layer_size=critic_preprocessing_layer_size,
         joint_fc_layer_params=critic_joint_fc_layers)
-      actor_net = agents.WcpgActorNetwork((observation_spec, alpha_spec), action_spec)
+      actor_net = agents.WcpgActorNetwork((observation_spec['observation'], alpha_spec), action_spec)
     else:
       actor_net = actor_distribution_network.ActorDistributionNetwork(
         observation_spec,

@@ -211,13 +211,13 @@ class WcpgAgent(ddpg_agent.DdpgAgent):
     """
     with tf.name_scope('critic_loss'):
       target_actions, _ = self._target_actor_network(
-          (next_time_steps.observation, alphas), next_time_steps.step_type)
-      next_target_critic_net_input = (next_time_steps.observation, target_actions, alphas)
+          (next_time_steps.observation['observation'], alphas), next_time_steps.step_type)
+      next_target_critic_net_input = (next_time_steps.observation['observation'], target_actions, alphas)
       next_target_Z, _ = self._target_critic_network(
           next_target_critic_net_input, next_time_steps.step_type)
       next_target_means = tf.reshape(next_target_Z.loc, [-1])
       next_target_vars = tf.reshape(next_target_Z.scale, [-1])
-      target_critic_net_input = (time_steps.observation, actions, alphas)
+      target_critic_net_input = (time_steps.observation['observation'], actions, alphas)
       target_Z, _ = self._target_critic_network(
         target_critic_net_input, next_time_steps.step_type)
       target_means = tf.reshape(target_Z.loc, [-1])
@@ -245,7 +245,7 @@ class WcpgAgent(ddpg_agent.DdpgAgent):
       tf.debugging.check_numerics(td_var_target, 'target var is inf or nan.')
       tf.debugging.check_numerics(td_var_target, 'target var is inf or nan.')
 
-      critic_net_input = (time_steps.observation, actions, alphas)
+      critic_net_input = (time_steps.observation['observation'], actions, alphas)
       Z, _ = self._critic_network(critic_net_input,
                                   time_steps.step_type)
       q_means = tf.reshape(Z.loc, [-1])
@@ -307,11 +307,11 @@ class WcpgAgent(ddpg_agent.DdpgAgent):
       actor_loss: A scalar actor loss.
     """
     with tf.name_scope('actor_loss'):
-      actions, _ = self._actor_network((time_steps.observation, alphas),
+      actions, _ = self._actor_network((time_steps.observation['observation'], alphas),
                                        time_steps.step_type)
       with tf.GradientTape(watch_accessed_variables=False) as tape:
         tape.watch(actions)
-        q, _ = self._critic_network((time_steps.observation, actions, alphas),
+        q, _ = self._critic_network((time_steps.observation['observation'], actions, alphas),
                                                      time_steps.step_type)
         q_means, q_vars = tf.reshape(q.loc, [-1]), tf.reshape(q.scale, [-1])
         # actions = tf.nest.flatten(actions)

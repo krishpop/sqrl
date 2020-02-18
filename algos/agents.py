@@ -467,7 +467,7 @@ class WcpgPolicy(actor_policy.ActorPolicy):
         observation = nest_utils.batch_nested_array(observation)
 
     alpha = np.array([self.alpha])[None]
-    return self._actor_network((observation, alpha), time_step.step_type, policy_state,
+    return self._actor_network((observation['observation'], alpha), time_step.step_type, policy_state,
                                training=self._training)
 
   def _distribution(self, time_step, policy_state):
