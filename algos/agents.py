@@ -29,6 +29,7 @@ import gin
 import time
 import numpy as np
 import tensorflow as tf
+import pdb
 
 from absl import logging
 import tensorflow_probability as tfp
@@ -258,10 +259,10 @@ class CriticNetwork(network.Network):
         1,
         activation=None,
         kernel_initializer=tf.keras.initializers.RandomUniform(-0.003, 0.003),
-        bias_initializer=tf.keras.initializers.RandomUniform(-1, 0),
+        bias_initializer=tf.keras.initializers.RandomUniform(-10, -9),
         name='value')
 
-  def call(self, observations, step_type, network_state=(), training=False):
+  def call(self, observations, step_type, network_state=(), training=False, mask=None):
     state, network_state = self._encoder(
         observations, step_type=step_type, network_state=network_state,
         training=training)
@@ -317,7 +318,7 @@ class DistributionalCriticNetwork(network.DistributionNetwork):
         inference for approximated Bayesian inference. The dropout layers are
         interleaved with the fully connected layers; there is a dropout layer
         after each fully connected layer, except if the entry in the list is
-        None. This list must have the same length of joint_fc_layer_params, or
+        None. This list must have the same length of joint_fc_layeri_params, or
         be None.
       kernel_initializer: Initializer to use for the kernels of the conv and
         dense layers. If none is provided a default glorot_uniform
@@ -446,7 +447,7 @@ class WcpgPolicy(actor_policy.ActorPolicy):
     super(WcpgPolicy, self).__init__(time_step_spec, action_spec, actor_network, info_spec,
                                      observation_normalizer, clip, training, name)
     self._alpha = alpha
-    self._alpha_sampler = alpha_sampler or (lambda: np.random.uniform(0.1, 1.))
+    self._alpha_sampler = alpha_sampler or (lambda: np.random.uniform(0.1, 1., dtype='float32'))
 
   @property
   def alpha(self):
@@ -454,7 +455,7 @@ class WcpgPolicy(actor_policy.ActorPolicy):
       self._alpha = self._alpha_sampler()
     return self._alpha
 
-  def _apply_actor_network(self, time_step, policy_state):
+  def _apply_actor_network(self, time_step, policy_state, mask=None):
     observation = time_step.observation
 
     if self._observation_normalizer:
@@ -553,7 +554,7 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
                clip=True,
                resample_counter=None,
                resample_n=50,
-               resample_k=1,
+               resample_k=6,
                training=False,
                name=None):
     super(SafeActorPolicyRSVar,
@@ -565,68 +566,87 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
     self._n = resample_n
     self._k = resample_k
 
-  def _apply_actor_network(self, time_step, policy_state):
-    ts_shape = time_step.step_type.shape.as_list() if nest_utils.has_tensors(time_step) else time_step.step_type.shape
-    has_batch_dim = ts_shape[0] is None or ts_shape[0] > 1
-    observation = time_step.observation
+  def _apply_actor_network(self, observation, step_type, policy_state, mask=None):
+    if observation['observation'].shape.as_list()[0] is None:
+      has_batch_dim = True
+    else:
+      has_batch_dim = observation['observation'].shape.as_list()[0] > 1
+
+    # batch_size = nest_utils.get_outer_shape(observation, self.time_step_spec.observation)[0]
+    # has_batch_dim = tf.function(batch_size > 1)()
+
     if self._observation_normalizer:
       observation = self._observation_normalizer.normalize(observation)
     actions, policy_state = self._actor_network(observation,
-                                                time_step.step_type,
+                                                step_type,
                                                 policy_state,
                                                 training=self._training)
-    if has_batch_dim or not self._training:  # returns normal actions, unmasked, when not training
+    # returns normal actions, unmasked, when not training
+    if not self._training: # or has_batch_dim:
       return actions, policy_state
 
-    # samples "best" safe action out of 50
-    n, k = self._n, self._k
-    sampled_ac = actions.sample(n)
-    obs = nest_utils.stack_nested_tensors(
-        [time_step.observation for _ in range(n)])
+    # setup input for sample_action
+    sampled_ac = actions.sample(self._n)
+    ac_mean = actions.mean()
+    if isinstance(actions, dist_utils.SquashToSpecNormal):
+      scale = actions.input_distribution.scale
+    else:
+      scale = actions.scale
 
-    obs_outer_rank = nest_utils.get_outer_rank(obs, self.time_step_spec.observation)
-    ac_outer_rank = nest_utils.get_outer_rank(sampled_ac, self.action_spec)
-    obs_batch_squash = utils.BatchSquash(obs_outer_rank)
-    ac_batch_squash = utils.BatchSquash(ac_outer_rank)
-    obs = tf.nest.map_structure(obs_batch_squash.flatten, obs)
-    sampled_ac = tf.nest.map_structure(ac_batch_squash.flatten, sampled_ac)
+    @common.function_in_tf1(autograph=True)
+    def sample_action(sample_input):
+      sampled_ac, ac_mean, scale, observation, step_type = sample_input
+      n, k = self._n, self._k
+      # samples "best" safe action out of 50
+      # sampled_ac = actions.sample(n)
+      obs = nest_utils.stack_nested_tensors([observation for _ in range(n)])
 
-    q_val, _ = self._safety_critic_network((obs, sampled_ac),
-                                           time_step.step_type)
-    fail_prob = tf.nn.sigmoid(q_val)
-    safe_ac_idx = tf.where(fail_prob < self._safety_threshold)
-
-    resample_count = 0
-    while resample_count < k and not safe_ac_idx.shape.as_list()[0]:
-      if self._resample_counter is not None:
-        self._resample_counter()
-      resample_count += 1
-      if isinstance(actions, dist_utils.SquashToSpecNormal):
-        scale = actions.input_distribution.scale * 1.5  # increase variance by constant 1.5
-        ac_mean = actions.mean()
-      else:
-        scale = actions.scale * 1.5
-        ac_mean = actions.mean()
-      actions = self._actor_network.output_spec.build_distribution(
-          loc=ac_mean, scale=scale)
-      sampled_ac = actions.sample(n)
+      obs_outer_rank = nest_utils.get_outer_rank(obs, self.time_step_spec.observation)
+      ac_outer_rank = nest_utils.get_outer_rank(sampled_ac, self.action_spec)
+      obs_batch_squash = utils.BatchSquash(obs_outer_rank)
+      ac_batch_squash = utils.BatchSquash(ac_outer_rank)
+      obs = tf.nest.map_structure(obs_batch_squash.flatten, obs)
       sampled_ac = tf.nest.map_structure(ac_batch_squash.flatten, sampled_ac)
-      q_val, _ = self._safety_critic_network((obs, sampled_ac),
-                                             time_step.step_type)
 
+      q_val, _ = self._safety_critic_network((obs, sampled_ac), step_type)
       fail_prob = tf.nn.sigmoid(q_val)
       safe_ac_idx = tf.where(fail_prob < self._safety_threshold)
+
+      for i in range(self._k):
+        if tf.reduce_any(tf.cast(safe_ac_idx, tf.bool)):
+          break
+
+        scale *= 1.5
+        if self._resample_counter is not None:
+          self._resample_counter()
+
+        actions = self._actor_network.output_spec.build_distribution(loc=ac_mean, scale=scale)
+        sampled_ac = actions.sample(n)
+        sampled_ac = tf.nest.map_structure(ac_batch_squash.flatten, sampled_ac)
+        q_val, _ = self._safety_critic_network((obs, sampled_ac), step_type)
+
+        fail_prob = tf.nn.sigmoid(q_val)
+        safe_ac_idx = tf.where(fail_prob < self._safety_threshold)
+
+      sampled_ac = ac_batch_squash.unflatten(sampled_ac)
+      return sampled_ac, safe_ac_idx, fail_prob
+
+    if has_batch_dim:
+      sampled_ac, safe_ac_idx, fail_prob = tf.map_fn(
+        sample_action, (sampled_ac, ac_mean, scale, observation, step_type))
+    else:
+      sampled_ac, safe_ac_idx, fail_prob = sample_action((sampled_ac, ac_mean, scale, observation, step_type))
     # logging.debug('resampled {} times, {} seconds'.format(resample_count, time.time() - start_time))
-    sampled_ac = ac_batch_squash.unflatten(sampled_ac)
-    if None in safe_ac_idx.shape.as_list() or 0 in safe_ac_idx.shape.as_list():
-      # logging.info('could not find safe action, choosing safest action at pfail={}'.format(tf.reduce_min(fail_prob)))
+
+    if 0 in safe_ac_idx.shape.as_list():
+      logging.info('could not find safe action, choosing safest action at pfail={}'.format(tf.reduce_min(fail_prob)))
       if self._resample_counter is not None:
         self._resample_counter()
       safe_idx = tf.argmin(fail_prob)  # return action closest to fail prob eps
     else:
       sampled_ac = tf.gather(sampled_ac, safe_ac_idx)
       fail_prob_safe = tf.gather(fail_prob, safe_ac_idx[:,0])
-      if self._training:
+      if not has_batch_dim:
         safe_idx = tf.argmax(fail_prob_safe)  # picks most unsafe action out of "safe" options
       else:
         # picks random safe_action

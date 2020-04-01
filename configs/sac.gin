@@ -9,45 +9,19 @@ import safemrl.trainer
 import safemrl.algos.ensemble_sac_agent
 
 include 'networks.gin'
+include 'trainer_default.gin'
 
-NUM_ENVS = 1
-NUM_EVAL = 30
-NUM_STEPS = 500000
-LEARNING_RATE = 3e-4
-SLOW_LEARNING_RATE = 1e-5
+# GIN MACROS
 AGENT_CLASS = 'sac'
-INITIAL_NUM_STEPS = %EP_LEN
 
-trainer.train_eval.env_name = %ENV_STR
-trainer.train_eval.env_load_fn = %ENV_LOAD_FN
-trainer.train_eval.gym_env_wrappers = %ENV_WRAPPERS
-trainer.train_eval.agent_class = %AGENT_CLASS
-trainer.train_eval.train_metrics = %TRAIN_METRICS
-trainer.train_eval.eval_metrics = %EVAL_METRICS
-trainer.train_eval.env_metric_factories = %ENV_METRIC_FACTORIES
-trainer.train_eval.num_global_steps = %NUM_STEPS
-trainer.train_eval.online_critic = False
-trainer.train_eval.keep_rb_checkpoint = True
-trainer.train_eval.max_episode_len = %EP_LEN
-
-trainer.train_eval.initial_collect_driver_class = @init_collect/dynamic_step_driver.DynamicStepDriver
-init_collect/dynamic_step_driver.DynamicStepDriver.num_steps = %INITIAL_NUM_STEPS
-trainer.train_eval.collect_driver_class = @collect_driver/dynamic_step_driver.DynamicStepDriver
-collect_driver/dynamic_step_driver.DynamicStepDriver.num_steps = 1
-trainer.train_eval.num_eval_episodes = %NUM_EVAL
-
-agents.normal_projection_net.scale_distribution = True
-
+# AGENT BINDINGS
 sac_agent.SacAgent.target_update_tau = 0.01
 sac_agent.SacAgent.reward_scale_factor = 1.0
+
+## AGENT OPTIMIZER BINDINGS
 sac_agent.SacAgent.actor_optimizer = @ac_opt/tf.keras.optimizers.Adam()
-ac_opt/tf.keras.optimizers.Adam.learning_rate = %LEARNING_RATE
+ac_opt/tf.keras.optimizers.Adam.learning_rate = %ACTOR_LR
 sac_agent.SacAgent.critic_optimizer = @cr_opt/tf.keras.optimizers.Adam()
-cr_opt/tf.keras.optimizers.Adam.learning_rate = %LEARNING_RATE
+cr_opt/tf.keras.optimizers.Adam.learning_rate = %CRITIC_LR
 sac_agent.SacAgent.alpha_optimizer = @al_opt/tf.keras.optimizers.Adam()
 al_opt/tf.keras.optimizers.Adam.learning_rate = %LEARNING_RATE
-
-# train_eval_ensemble.train_eval.gradient_clipping = 1.
-# train_eval_ensemble.train_eval.actor_learning_rate = %SLOW_LEARNING_RATE
-
-# sac.sac_agent.actor_net = @actor_distribution_network.ActorDistributionNetwork()

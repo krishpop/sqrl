@@ -101,7 +101,10 @@ def resize_walls(walls, factor):
   Returns:
     walls: rescaled walls
   """
-  resize_w, resize_h = factor
+  if isinstance(factor, tuple):
+    resize_w, resize_h = factor
+  else:
+    resize_w, resize_h = factor, factor
   (height, width) = walls.shape
   row_indices = np.array([i for i in range(height) for _ in range(resize_h)])  # pylint: disable=g-complex-comprehension
   col_indices = np.array([i for i in range(width) for _ in range(resize_w)])  # pylint: disable=g-complex-comprehension
@@ -415,7 +418,7 @@ class GoalConditionedPointWrapper(gym.Wrapper):
       task_rew += -.1
 
     if self.is_done(state, goal) and not obs['fallen']:
-      task_rew = 10.
+      task_rew = 1.
       done = True
     elif obs['fallen']:  # if fallen into well
       done = True if self._reset_on_fall else False

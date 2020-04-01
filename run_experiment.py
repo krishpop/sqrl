@@ -67,7 +67,7 @@ def define_flags():
   ### SQRL args
   flags.DEFINE_float('safety_lr', None, 'Learning rate for safety critic')
   flags.DEFINE_float('safety_gamma', None, 'Safety discount term used for TD backups')
-  flags.DEFINE_float('target_safety', 0.1, 'Target safety for safety critic')
+  flags.DEFINE_float('target_safety', None, 'Target safety for safety critic')
   ### SAC-ensemble args
   flags.DEFINE_integer('n_critics', None, 'number of critics to use')
 
@@ -118,7 +118,8 @@ def gin_bindings_from_config(config, gin_bindings=[]):
   # Configure agent prefixes
   if agent_class == 'sac_safe_online':
     gin_bindings.append('safe_sac_agent.SafeSacAgentOnline.safety_gamma = {}'.format(config.safety_gamma))
-    gin_bindings.append('safe_sac_agent.SafeSacAgentOnline.target_safety = {}'.format(config.target_safety))
+    if config.target_safety:
+      gin_bindings.append('safe_sac_agent.SafeSacAgentOnline.target_safety = {}'.format(config.target_safety))
     agent_prefix = 'safe_sac_agent.SafeSacAgentOnline'
   elif agent_class == 'sac':
     agent_prefix = 'sac_agent.SacAgent'
@@ -192,7 +193,7 @@ def gin_bindings_from_config(config, gin_bindings=[]):
     if config.action_scale:
       gin_bindings.append('point_mass.PointMassEnv.action_noise = {}'.format(config.action_scale))
     if config.finetune:
-      gin_bindings.append("point_mass.GoalConditionedPointWrapper.goal = (6, 3)")
+      gin_bindings.append("point_mass.GoalConditionedPointWrapper.goal = (6, 5)")
 
   if config.initial_collect_steps:
     gin_bindings.append("INITIAL_NUM_STEPS = {}".format(config.initial_collect_steps))
@@ -250,7 +251,7 @@ def main(_):
   trainer.train_eval(config.root_dir, load_root_dir=FLAGS.load_dir, batch_size=config.batch_size, seed=FLAGS.seed,
                      train_metrics_callback=wandb.log, eager_debug=FLAGS.eager_debug,
                      monitor=FLAGS.monitor, debug_summaries=FLAGS.debug_summaries, pretraining=(not FLAGS.finetune),
-                     finetune_sc=FLAGS.finetune_sc)
+                     finetune_sc=FLAGS.finetune_sc, wandb=True)
 
 
 if __name__ == '__main__':

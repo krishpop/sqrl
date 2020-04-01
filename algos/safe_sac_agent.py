@@ -85,18 +85,22 @@ class SafeSacAgent(sac_agent.SacAgent):
                summarize_grads_and_vars=False,
                train_step_counter=None,
                critic_metrics=[],
-               name=None):
+               name="SafeSacAgent"):
 
     super(SafeSacAgent,
-          self).__init__(time_step_spec, action_spec, critic_network,
-                         actor_network, actor_optimizer, critic_optimizer,
-                         alpha_optimizer, actor_policy_ctor, critic_network_2,
-                         target_critic_network, target_critic_network_2,
-                         target_update_tau, target_update_period,
-                         td_errors_loss_fn, gamma, reward_scale_factor,
-                         initial_log_alpha, target_entropy, gradient_clipping,
-                         debug_summaries, summarize_grads_and_vars,
-                         train_step_counter, name)
+          self).__init__(time_step_spec=time_step_spec, action_spec=action_spec, critic_network=critic_network,
+                         actor_network=actor_network, actor_optimizer=actor_optimizer,
+                         critic_optimizer=critic_optimizer,
+                         alpha_optimizer=alpha_optimizer, critic_network_2=critic_network_2,
+                         target_critic_network=target_critic_network,
+                         target_critic_network_2=target_critic_network_2,
+                         actor_policy_ctor=actor_policy_ctor,
+                         target_update_tau=target_update_tau, target_update_period=target_update_period,
+                         td_errors_loss_fn=td_errors_loss_fn, gamma=gamma, reward_scale_factor=reward_scale_factor,
+                         initial_log_alpha=initial_log_alpha, target_entropy=target_entropy,
+                         gradient_clipping=gradient_clipping,
+                         debug_summaries=debug_summaries, summarize_grads_and_vars=summarize_grads_and_vars,
+                         train_step_counter=train_step_counter, name=name)
 
     self._safety_critic_network = safety_critic_network
     if safety_critic_network is not None:
@@ -592,26 +596,29 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
                train_step_counter=None,
                safety_pretraining=True,
                resample_counter=None,
-               name=None):
+               name="SafeSacAgentOnline"):
     self._safety_critic_network = safety_critic_network
     self._train_critic_online = train_critic_online
-    super(SafeSacAgentOnline,
-          self).__init__(time_step_spec, action_spec, critic_network,
-                         actor_network, actor_optimizer, critic_optimizer,
-                         alpha_optimizer, actor_policy_ctor, critic_network_2,
-                         target_critic_network, target_critic_network_2,
-                         target_update_tau, target_update_period,
-                         td_errors_loss_fn, gamma, reward_scale_factor,
-                         initial_log_alpha, target_entropy, gradient_clipping,
-                         debug_summaries, summarize_grads_and_vars,
-                         train_step_counter, name)
+    super(SafeSacAgentOnline, self).__init__(
+        time_step_spec=time_step_spec, action_spec=action_spec, critic_network=critic_network,
+        actor_network=actor_network, actor_optimizer=actor_optimizer,
+        critic_optimizer=critic_optimizer,
+        alpha_optimizer=alpha_optimizer, critic_network_2=critic_network_2,
+        target_critic_network=target_critic_network,
+        target_critic_network_2=target_critic_network_2,
+        actor_policy_ctor=actor_policy_ctor,
+        target_update_tau=target_update_tau, target_update_period=target_update_period,
+        td_errors_loss_fn=td_errors_loss_fn, gamma=gamma, reward_scale_factor=reward_scale_factor,
+        initial_log_alpha=initial_log_alpha, target_entropy=target_entropy,
+        gradient_clipping=gradient_clipping,
+        debug_summaries=debug_summaries, summarize_grads_and_vars=summarize_grads_and_vars,
+        train_step_counter=train_step_counter, name=name)
 
     if safety_critic_network is not None:
       self._safety_critic_network.create_variables()
     else:
       self._safety_critic_network = common.maybe_copy_target_network_with_checks(
-        critic_network, None, 'SafetyCriticNetwork'
-      )
+        critic_network, None, 'SafetyCriticNetwork')
 
     self._log_lambda = common.create_variable(
         'initial_log_lambda',

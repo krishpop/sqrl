@@ -1,5 +1,6 @@
 import collections
 import gin
+import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
 
@@ -130,6 +131,7 @@ class WcpgAgent(ddpg_agent.DdpgAgent):
 
     policy = agents.WcpgPolicy(
         time_step_spec=time_step_spec, action_spec=action_spec,
+        alpha_sampler=lambda: np.random.uniform(0.1,0.3,dtype='float32'),
         actor_network=self._actor_network, clip=True)
     collect_policy = agents.WcpgPolicy(
         time_step_spec=time_step_spec, action_spec=action_spec,

@@ -1,0 +1,26 @@
+import safemrl.envs.three_finger
+import safemrl.utils.metrics
+import safemrl.utils.misc
+import safemrl.algos.agents
+import tf_agents.environments.suite_pybullet
+import tf_agents.networks.actor_distribution_network
+
+EP_LEN = 100
+ENV_LOAD_FN = @suite_pybullet.load
+ENV_STR = "ThreeFingerRawResetEnv-v0"
+ENV_WRAPPERS = [@three_finger.TaskAgnWrapper]
+TRAIN_METRICS = [@metrics.ThreeFingerAverageSuccessMetric()]
+EVAL_METRICS = [@eval_succ/metrics.ThreeFingerAverageSuccessMetric()]
+eval_succ/metrics.ThreeFingerAverageSuccessMetric.name = "EvalAverageSuccess"
+
+ENV_METRIC_FACTORIES = []
+# safemrl.utils.metrics.AverageEarlyFailureMetric.batch_size = %NUM_ENVS
+three_finger.ThreeFingerRawEnv.reward_type = 'sparse'
+
+actor_distribution_network.ActorDistributionNetwork.preprocessing_combiner = (
+    @misc.extract_observation_layer()
+)
+
+agents.CriticNetwork.preprocessing_combiner = (
+    @misc.extract_obs_merge_w_ac_layer()
+)

@@ -11,7 +11,24 @@ import safemrl.algos.ensemble_sac_agent
 include 'point_mass_default.gin'
 include 'sac.gin'
 
-agents.normal_projection_net.init_means_output_factor = 0.05
-sac_agent.SacAgent.target_entropy = -16
-sac_agent.SacAgent.gamma = 0.925
+EP_LEN = 30
+INITIAL_NUM_STEPS = 500
+NUM_STEPS = 100000
+LEARNING_RATE = 3e-4
+
+agents.normal_projection_net.init_means_output_factor = 0.01
+sac_agent.SacAgent.target_entropy = -2
+agents.normal_projection_net.scale_distribution = True
+sac_agent.SacAgent.gamma = 1
 sac_agent.SacAgent.initial_log_alpha = 0.
+
+point_mass.env_load_fn.resize_factor = (2, 1)
+point_mass.PointMassEnv.start = (0, 6)
+point_mass.GoalConditionedPointWrapper.goal = (7, 6)
+point_mass.GoalConditionedPointWrapper.goal_bounds=[(6,4), (7,8)]
+point_mass.PointMassEnv.action_scale = 1.
+point_mass.PointMassEnv.action_noise = 0.
+
+point_mass.TimeLimitBonus.early_term_penalty = 1.
+point_mass.TimeLimitBonus.early_term_bonus = 1.
+point_mass.TimeLimitBonus.time_limit_penalty = -30

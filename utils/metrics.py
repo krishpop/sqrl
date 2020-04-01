@@ -269,3 +269,33 @@ class CubeAverageScoreMetric(py_metrics.StreamingMetric):
     if len(is_last[0]) > 0:
       for idx in is_last[0]:
         self.add_to_buffer([self._env[idx].last_score])
+
+
+@gin.configurable
+class ThreeFingerAverageSuccessMetric(py_metrics.StreamingMetric):
+  """Computes average success rate for envs which terminate with positive reward in successful eps."""
+
+  def __init__(self, name='AverageSuccess', buffer_size=10, batch_size=None):
+    """Creates an AverageSuccessMetric."""
+    # Set a dummy value on self._np_state.obs_val so it gets included in
+    # the first checkpoint (before metric is first called).
+    super(ThreeFingerAverageSuccessMetric, self).__init__(
+        name, buffer_size=buffer_size, batch_size=batch_size)
+
+  def _reset(self, batch_size):
+    return
+
+  def _batched_call(self, trajectory):
+    """Processes the trajectory to update the metric.
+
+    Args:
+      trajectory: a tf_agents.trajectory.Trajectory.
+    """
+
+    is_last = np.where(trajectory.is_last())
+
+    if len(is_last[0]) > 0:
+      succ = np.logical_and(
+          np.logical_not(trajectory.observation['task_agn_rew'][is_last]),
+          trajectory.reward[is_last] > 1.)
+      self.add_to_buffer(succ)

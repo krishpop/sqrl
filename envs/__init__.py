@@ -19,6 +19,7 @@ from __future__ import absolute_import
 
 import gym
 from safemrl.envs import minitaur
+from safemrl.envs import three_finger
 from safemrl.envs import cube_env
 from safemrl.envs import env_randomizers
 from pybullet_envs.minitaur.envs.env_randomizers import minitaur_terrain_randomizer
@@ -28,6 +29,7 @@ from gym.envs.registration import register
 registered = "MinitaurGoalVelocityEnv-v0" in gym.envs.registry.env_specs
 
 if not registered:
+  # MINITAUR ENVS
   register(
     id="MinitaurGoalVelocityEnv-v0",
     entry_point=minitaur.MinitaurGoalVelocityEnv,
@@ -62,6 +64,7 @@ if not registered:
     kwargs={'env_randomizer': randomizers, 'max_steps': 500}
   )
 
+  # CUBE ENVS
   v_num = 0
   for ac_hist in [0, 7]:
     for n_steps in [500, 100, 1000]:
@@ -73,3 +76,18 @@ if not registered:
           kwargs=dict(max_steps=n_steps,same_goals=same_goals, action_history=ac_hist)
         )
         v_num += 1
+
+  # THREE FINGER ENVS
+  register(
+    id="ThreeFingerRawEnv-v0",
+    entry_point=three_finger.ThreeFingerRawEnv,
+    max_episode_steps=100,
+    kwargs={'max_steps': 100}
+  )
+
+  register(
+    id="ThreeFingerRawResetEnv-v0",
+    entry_point=three_finger.ThreeFingerRawEnv,
+    max_episode_steps=100,
+    kwargs={'max_steps': 100, 'reset_on_drop': True}
+  )

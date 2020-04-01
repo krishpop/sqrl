@@ -1,0 +1,3 @@
+include 'minitaur_default.gin'
+
+minitaur.MinitaurGoalVelocityEnv.friction = 0.8
