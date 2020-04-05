@@ -156,7 +156,7 @@ class SafeSacAgent(sac_agent.SacAgent):
 
   def _experience_to_transitions(self, experience):
     # Assumes that experience does not contain time dimension, only batch dimension
-    boundary_mask = experience.is_boundary()[:, 0]
+    boundary_mask = tf.logical_not(experience.is_boundary()[:, 0])
     experience = nest_utils.fast_map_structure(lambda *x: tf.boolean_mask(*x, boundary_mask), experience)
     time_steps, policy_steps, next_time_steps = trajectory.to_transition(experience)
 
@@ -640,7 +640,6 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
         actor_network=self._actor_network,
         safety_critic_network=self._safety_critic_network,
         safety_threshold=self._target_safety,
-        resample_counter=resample_counter,
         training=False)
 
     self._safety_critic_optimizer = safety_critic_optimizer
@@ -890,6 +889,7 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
       policy_state = self.collect_policy.get_initial_state(batch_size)
       action_distribution = self.collect_policy.distribution(
           time_steps, policy_state=policy_state).action
+      # actions = tf.nest.map_structure(lambda d: d.sample(), action_distribution)
     else:
       # n = 30
       # policy_state = self._safe_policy.get_initial_state(batch_size)
@@ -905,6 +905,7 @@ class SafeSacAgentOnline(sac_agent.SacAgent):
       policy_state = self._safe_policy.get_initial_state(batch_size)
       action_distribution = self._safe_policy.distribution(
           time_steps, policy_state=policy_state).action
+      # actions = tf.nest.map_structure(lambda d: d.sample(), action_distribution)
     # Sample actions and log_pis from transformed distribution.
     actions = tf.nest.map_structure(lambda d: d.sample(), action_distribution)
     log_pi = common.log_probability(action_distribution, actions,

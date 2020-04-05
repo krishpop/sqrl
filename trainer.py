@@ -303,7 +303,7 @@ def train_eval(
     if agent_class in SAFETY_AGENTS:  # online_critic:
       online_replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
           collect_data_spec, batch_size=1, max_length=500000, dataset_window_shift=1)
-      # agent_observers.append(online_replay_buffer.add_batch)  # collect policy only adds to online_rb
+      agent_observers.append(online_replay_buffer.add_batch)  # collect policy only adds to online_rb
 
       online_rb_ckpt_dir = os.path.join(train_dir, 'online_replay_buffer')
       online_rb_checkpointer = common.Checkpointer(
@@ -311,7 +311,7 @@ def train_eval(
           max_to_keep=1,
           replay_buffer=online_replay_buffer)
 
-      # clear_rb = online_replay_buffer.clear
+      clear_rb = online_replay_buffer.clear
 
     train_metrics = [
         tf_metrics.NumberOfEpisodes(),
@@ -327,9 +327,11 @@ def train_eval(
       eval_policy = tf_agent.policy
       collect_policy = tf_agent.collect_policy
     else:
-      eval_policy = tf_agent._safe_policy
+      eval_policy = tf_agent.collect_policy if pretraining else tf_agent._safe_policy
       collect_policy = tf_agent.collect_policy
-      online_collect_policy = tf_agent._safe_policy #  if pretraining else tf_agent.collect_policy
+      online_collect_policy = tf_agent._safe_policy  # if pretraining else tf_agent.collect_policy
+      if pretraining:
+        online_collect_policy._training = False
 
     if not load_root_dir:
       initial_collect_policy = random_tf_policy.RandomTFPolicy(time_step_spec, action_spec)
@@ -429,8 +431,8 @@ def train_eval(
     if not rb_checkpointer.checkpoint_exists:  # and load_rb_ckpt_dir is None: # and pretraining:
       logging.info('Performing initial collection ...')
       init_collect_observers = agent_observers + train_metrics + env_metrics
-      if agent_class in SAFETY_AGENTS:
-        init_collect_observers += [online_replay_buffer.add_batch]
+      # if agent_class in SAFETY_AGENTS:
+      #   init_collect_observers += [online_replay_buffer.add_batch]
       initial_collect_driver_class(
           tf_env,
           initial_collect_policy,
@@ -503,6 +505,7 @@ def train_eval(
           # safe_rew = rb_rewards
           # safe_rew = tf.gather(safe_rew, tf.squeeze(buf_info.ids), axis=1)
         weights = (safe_rew / tf.reduce_mean(safe_rew+1e-16) + (1-safe_rew) / (tf.reduce_mean(1-safe_rew))) / 2
+        # weights = None
         # weights = 1 - safe_rew + safe_rew * (tf.reduce_mean(1-safe_rew) / 2 * tf.reduce_mean(safe_rew + 1e-16))
         ret = tf_agent.train_sc(experience, safe_rew, weights=weights, metrics=critic_metrics, training=updating_sc)
         logging.debug('critic train step: {} sec'.format(time.time() - start_time))
@@ -593,6 +596,9 @@ def train_eval(
         train_metrics_callback(
           {'train_loss': mean_train_loss.result().numpy()}, step=global_step.numpy())
 
+      if current_step == num_global_steps // 2 and pretraining and online_critic:
+        online_collect_policy._training = True
+
       # TRAIN (or evaluate) SAFETY CRITIC
       if agent_class in SAFETY_AGENTS and current_step % train_sc_interval == 0 and (pretraining or finetune_sc):
           batch_time_step = sc_tf_env.reset()
@@ -682,7 +688,7 @@ def train_eval(
           online_rb_checkpointer.save(global_step=global_step_val)
         rb_checkpointer.save(global_step=global_step_val)
       # elif online_critic:
-      #   clear_rb()
+      #   clear_rb()  # clears replay_buffer so collects "online rollouts"
       if wandb and current_step % eval_interval == 0 and "Drunk" in env_name:
         misc.record_point_mass_episode(eval_tf_env, eval_policy, global_step_val)
         if online_critic:

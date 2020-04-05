@@ -582,7 +582,7 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
                                                 policy_state,
                                                 training=self._training)
     # returns normal actions, unmasked, when not training
-    if not self._training: # or has_batch_dim:
+    if not self._training:
       return actions, policy_state
 
     # setup input for sample_action
@@ -595,11 +595,11 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
 
     @common.function_in_tf1(autograph=True)
     def sample_action(sample_input):
-      sampled_ac, ac_mean, scale, observation, step_type = sample_input
+      sampled_ac, ac_mean, scale, obs, step_type = sample_input
       n, k = self._n, self._k
       # samples "best" safe action out of 50
       # sampled_ac = actions.sample(n)
-      obs = nest_utils.stack_nested_tensors([observation for _ in range(n)])
+      # obs = nest_utils.stack_nested_tensors([observation for _ in range(n)])
 
       obs_outer_rank = nest_utils.get_outer_rank(obs, self.time_step_spec.observation)
       ac_outer_rank = nest_utils.get_outer_rank(sampled_ac, self.action_spec)
@@ -632,17 +632,19 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
       return sampled_ac, safe_ac_idx, fail_prob
 
     if has_batch_dim:
+      obs = nest_utils.stack_nested_tensors([observation for _ in range(self._n)])
       sampled_ac, safe_ac_idx, fail_prob = tf.map_fn(
-        sample_action, (sampled_ac, ac_mean, scale, observation, step_type))
+        sample_action, (sampled_ac, [ac_mean], [scale], obs, [step_type]))
     else:
       sampled_ac, safe_ac_idx, fail_prob = sample_action((sampled_ac, ac_mean, scale, observation, step_type))
     # logging.debug('resampled {} times, {} seconds'.format(resample_count, time.time() - start_time))
 
     if 0 in safe_ac_idx.shape.as_list():
-      logging.info('could not find safe action, choosing safest action at pfail={}'.format(tf.reduce_min(fail_prob)))
+      logging.debug('could not find safe action, choosing safest action at pfail={}'.format(tf.reduce_min(fail_prob)))
       if self._resample_counter is not None:
         self._resample_counter()
       safe_idx = tf.argmin(fail_prob)  # return action closest to fail prob eps
+      return actions, policy_state
     else:
       sampled_ac = tf.gather(sampled_ac, safe_ac_idx)
       fail_prob_safe = tf.gather(fail_prob, safe_ac_idx[:,0])

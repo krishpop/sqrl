@@ -21,6 +21,7 @@ include 'trainer_default.gin'
 # GIN MACROS
 NUM_EVAL = 5
 AGENT_CLASS = 'sac_safe_online'
+LEARNING_RATE = 5e-3
 
 # TRAINER BINDINGS
 trainer.train_eval.online_critic = True

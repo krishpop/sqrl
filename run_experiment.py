@@ -55,15 +55,14 @@ def define_flags():
   flags.DEFINE_float('lr', None, 'Learning rate for all optimizers')
   flags.DEFINE_float('actor_lr', None, 'Learning rate for actor')
   flags.DEFINE_float('critic_lr', None, 'Learning rate for critic')
-  flags.DEFINE_float('target_update_tau', 0.005, 'Factor for soft update of the target networks')
+  flags.DEFINE_float('target_update_tau', None, 'Factor for soft update of the target networks')
   flags.DEFINE_integer('target_update_period', 1, 'Period for soft update of the target networks')
-  flags.DEFINE_float('gamma', 1., 'Future reward discount factor')
+  flags.DEFINE_float('gamma', None, 'Future reward discount factor')
   flags.DEFINE_float('reward_scale_factor', 1.0, 'Reward scale factor for SacAgent')
   flags.DEFINE_float('gradient_clipping', None, 'Gradient clipping factor for SacAgent')
   ## SAC args
   flags.DEFINE_float('entropy_lr', None, 'Learning rate for alpha')
   flags.DEFINE_integer('target_entropy', None, 'Target entropy for policy')
-  flags.DEFINE_float('initial_log_alpha', 1., 'Initial value for log_alpha')
   ### SQRL args
   flags.DEFINE_float('safety_lr', None, 'Learning rate for safety critic')
   flags.DEFINE_float('safety_gamma', None, 'Safety discount term used for TD backups')
@@ -153,9 +152,11 @@ def gin_bindings_from_config(config, gin_bindings=[]):
 
     # Generic agent bindings
     gin_bindings.append('{}.reward_scale_factor = {}'.format(agent_prefix, config.reward_scale_factor))
-    gin_bindings.append('{}.target_update_tau = {}'.format(agent_prefix, config.target_update_tau))
+    if config.target_update_tau:
+      gin_bindings.append('{}.target_update_tau = {}'.format(agent_prefix, config.target_update_tau))
     gin_bindings.append('{}.target_update_period = {}'.format(agent_prefix, config.target_update_period))
-    gin_bindings.append('{}.gamma = {}'.format(agent_prefix, config.gamma))
+    if config.gamma:
+      gin_bindings.append('{}.gamma = {}'.format(agent_prefix, config.gamma))
     gin_bindings.append('{}.gradient_clipping = {}'.format(agent_prefix, config.gradient_clipping))
 
   ## Agent-specific bindings
