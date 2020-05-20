@@ -35,7 +35,6 @@ import wandb
 import functools
 
 from gym.wrappers import Monitor
-from scipy.signal import butter, lfilter
 from tf_agents.utils import common
 
 
@@ -44,23 +43,10 @@ from tf_agents.utils import common
 
 AGENT_CLASS_BINDINGS = {
   'sac-safe': 'safe_sac_agent.SafeSacAgent',
-  'sac-safe-online': 'safe_sac_agent.SafeSacAgentOnline',
+  'sac-safe-online': 'safe_sac_agent.SqrlAgent',
   'sac': 'sac_agent.SacAgent',
   'sac-ensemble': 'ensemble_sac_agent.EnsembleSacAgent'
 }
-
-def butter_bandpass(lowcut=0.1, highcut=5.0, fs=50, order=1):
-    nyq = 0.5 * fs
-    low = lowcut / nyq
-    high = highcut / nyq
-    b, a = butter(order, [low, high], btype='band')
-    return b, a
-
-
-def butter_bandpass_filter(data, lowcut=0.1, highcut=5.0, fs=50, order=1):
-    b, a = butter_bandpass(lowcut, highcut, fs, order=order)
-    y = lfilter(b, a, data)
-    return y[-1]
 
 
 def load_rb_ckpt(ckpt_dir, replay_buffer, ckpt_step=None):
@@ -148,24 +134,29 @@ def record_point_mass_episode(tf_env, tf_policy, step=None, log_key='trajectory'
   states = np.array(states)
   env = tf_env.pyenv.envs[0]
 
-  walls = env.walls.copy().astype(float)
-  w, h = walls.shape
-  start = env.unwrapped._start.astype(int)
-  goal = env._goal
-  walls[np.where(env.walls == 0)], walls[np.where(env.walls == 1)] = .5, 0.0
-  walls[tuple(goal)] = .76
-  walls[tuple(start)] = .65
-
-  f, ax = plt.subplots(figsize=(w * .8, h * .8))
-  ax.matshow(walls, cmap=plt.cm.RdBu, vmin=0, vmax=1)
-  u1, v1 = (states[1:, 1] - states[:-1, 1]) * .35, (states[:-1, 0] - states[1:, 0]) * .35
-  ax.quiver(states[:-1, 1], states[:-1, 0], u1, v1, color='g',
-             scale=.5, scale_units='x', minlength=min(np.abs(u1) + np.abs(v1)),
-             headlength=3, headaxislength=2.5)
-  plt.scatter(states[:, 1], states[:, 0])
-  ax.set_axis_off()
+  f = plot_point_mass(env, states)
   wandb.log({log_key: wandb.Image(f)}, step=step)
   plt.close(f)
+  return
+
+
+def plot_point_mass(env, states):
+  walls = env.walls.copy().astype(float)
+  w, h = walls.shape
+  start = env.unwrapped._start
+  goal = env._goal
+  walls[np.where(env.walls == 0)], walls[np.where(env.walls == 1)] = .5, 0.0
+
+  f, ax = plt.subplots(figsize=(w * .8, h * .8))
+  ax.scatter([start[1] - .5], [start[0] - .5], c='r', marker='X', s=150)
+  ax.scatter([goal[1] - .5], [goal[0] - .5], c='g', s=150, alpha=.5)
+  ax.matshow(walls, cmap=plt.cm.RdBu, vmin=0, vmax=1)
+  u1, v1 = (states[1:, 1] - states[:-1, 1]) * .35, (states[:-1, 0] - states[1:, 0]) * .35
+  ax.quiver(states[:-1, 1] - .5, states[:-1, 0] - .5, u1, v1, color='g',
+            scale=.5, scale_units='x', minlength=min(np.abs(u1) + np.abs(v1)),
+            headlength=3, headaxislength=2.5)
+  ax.scatter(states[:, 1] - .5, states[:, 0] - .5)
+  ax.set_axis_off()
   return f
 
 def process_replay_buffer(replay_buffer, max_ep_len=500, k=1, as_tensor=True):
@@ -219,6 +210,12 @@ def merge_obs_w_ac_layer():
 @gin.configurable
 def extract_observation_layer():
   return tf.keras.layers.Lambda(lambda obs: obs['observation'])
+
+
+@gin.configurable
+def extract_observation_goal_layer():
+  return tf.keras.layers.Lambda(lambda obs: tf.keras.layers.concatenate(
+    [obs['observation'], obs['goal']]))
 
 
 @gin.configurable

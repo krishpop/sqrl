@@ -7,34 +7,42 @@ import tf_agents.networks.actor_distribution_network
 import safemrl.trainer
 import safemrl.algos.ensemble_sac_agent
 
-include 'sac_safe_online.gin'
+include 'sqrl.gin'
 include 'point_mass_default.gin'
 
 EP_LEN = 30
 INITIAL_NUM_STEPS = 500
-NUM_STEPS = 50000
+NUM_STEPS = 100000
 LEARNING_RATE = 3e-4
 
 agents.normal_projection_net.init_means_output_factor = 0.01
-# agents.normal_projection_net.init_action_stddev = 0.35
-agents.normal_projection_net.scale_distribution = True
 
-safe_sac_agent.SafeSacAgentOnline.target_entropy = -4
-safe_sac_agent.SafeSacAgentOnline.gamma = 1.
-safe_sac_agent.SafeSacAgentOnline.initial_log_alpha = 0.
-safe_sac_agent.SafeSacAgentOnline.safety_gamma = 0.55
-safe_sac_agent.SafeSacAgentOnline.target_safety = 0.2
+# trainer.train_eval.lambda_schedule_nsteps = 10000
+# trainer.train_eval.lambda_initial = 0.
+# trainer.train_eval.lambda_final = 10.
+trainer.train_eval.lambda_initial = 1.
+trainer.train_eval.kstep_fail = 0
 
-point_mass.env_load_fn.resize_factor = (1, 1)
+safe_sac_agent.SqrlAgent.gamma = 1.
+safe_sac_agent.SqrlAgent.initial_log_alpha = 0.
+safe_sac_agent.SqrlAgent.safety_gamma = 0.4
+safe_sac_agent.SqrlAgent.target_safety = 0.4
+
+
 # point_mass.PointMassEnv.start = (0, 6)
 # point_mass.GoalConditionedPointWrapper.goal = (7, 6)
 # point_mass.GoalConditionedPointWrapper.goal_bounds=[(6,4), (7,8)]
 point_mass.PointMassEnv.action_scale = 1.
 point_mass.PointMassEnv.action_noise = 0.
+point_mass.GoalConditionedPointWrapper.task_rew_type = "l2"
+
+# point_mass.TimeLimitBonus.early_term_penalty = 0.
+# point_mass.TimeLimitBonus.early_term_bonus = 0.
+# point_mass.TimeLimitBonus.time_limit_penalty = -60.
 
 point_mass.TimeLimitBonus.early_term_penalty = 1.
 point_mass.TimeLimitBonus.early_term_bonus = 1.
-point_mass.TimeLimitBonus.time_limit_penalty = -30
+point_mass.TimeLimitBonus.time_limit_penalty = -30.
 
-# point_mass.GoalConditionedPointWrapper.fall_penalty = -3.
-point_mass.GoalConditionedPointWrapper.task_rew_type = "l2"
+# point_mass.env_load_fn.resize_factor = (1, 2)
+# point_mass.env_load_fn.fall_penalty = -5.

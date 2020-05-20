@@ -100,7 +100,7 @@ class AverageFallenMetric(py_metrics.StreamingMetric):
     is_last = np.where(trajectory.is_boundary())
 
     if len(is_last[0]) > 0:
-      self.add_to_buffer(trajectory.observation['fallen'][is_last])
+      self.add_to_buffer(trajectory.observation['task_agn_rew'][is_last])
 
 
 @gin.configurable
@@ -110,7 +110,7 @@ class TotalFallenMetric(py_metrics.CounterMetric):
 
   def call(self, trajectory):
     if trajectory.is_boundary():
-      self._np_state.count += 1. * trajectory.observation['fallen'][0]
+      self._np_state.count += 1. * trajectory.observation['task_agn_rew'][0]
 
 
 @gin.configurable
@@ -120,7 +120,7 @@ class TotalSuccessMetric(py_metrics.CounterMetric):
 
   def call(self, trajectory):
     if trajectory.is_last():
-      self._np_state.count += 1 * (trajectory.reward > 1.)[0]
+      self._np_state.count += 1 * (trajectory.reward >= 1.)[0]
 
 
 @gin.configurable
@@ -148,8 +148,8 @@ class AverageSuccessMetric(py_metrics.StreamingMetric):
 
     if len(is_last[0]) > 0:
       succ = np.logical_and(
-          np.logical_not(trajectory.observation['fallen'][is_last]),
-          trajectory.reward[is_last] > 1.)
+          np.logical_not(trajectory.observation['task_agn_rew'][is_last]),
+          trajectory.reward[is_last] >= 1.)
       self.add_to_buffer(succ)
 
 

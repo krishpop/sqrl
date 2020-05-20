@@ -29,7 +29,7 @@ import gym
 import numpy as np
 
 from pybullet_envs.minitaur.envs import minitaur_extended_env
-from safemrl.utils import misc
+from scipy.signal import butter, lfilter
 
 ENV_DEFAULTS = {
   "accurate_motor_model_enabled": True,
@@ -51,7 +51,7 @@ class MinitaurGoalVelocityEnv(minitaur_extended_env.MinitaurExtendedEnv):
                goal_limit=0.8,
                max_steps=500,
                debug=False,
-               butterworth=False,
+               butterworth=True,
                friction=None,
                **kwargs):
     self.set_sample_goal_args(goal_limit, goal_vel)
@@ -145,8 +145,10 @@ class MinitaurGoalVelocityEnv(minitaur_extended_env.MinitaurExtendedEnv):
       action *= self._action_scale
       self._past_actions[self._counter] = action
       data = self._past_actions[:self._counter+1]
-      action = np.apply_along_axis(misc.butter_bandpass_filter, 0, data)
+      action = np.apply_along_axis(butter_bandpass_filter, 0, data)
       action /= self._action_scale
+    if len(action.shape) == 2:
+      action = action[-1]
     return super(MinitaurGoalVelocityEnv, self).step(action)
 
 
@@ -214,3 +216,28 @@ class CurrentVelWrapper(gym.Wrapper):
     else:
       o = {'observation': o, 'current_vel': self.unwrapped.current_vel}
     return o
+
+
+class SafetyGymWrapper(gym.Wrapper):
+  def __init__(self, env, fall_cost=1.):
+    super(SafetyGymWrapper, self).__init__(env)
+    self._fall_cost = fall_cost
+
+  def step(self, action):
+    o, r, d, i = super(SafetyGymWrapper, self).step(action)
+    i.update({'cost': float(self.env.is_fallen()) * self._fall_cost})
+    return o, r, d, i
+
+
+def butter_bandpass_filter(data, lowcut=0.1, highcut=5.0, fs=50, order=1):
+  b, a = butter_bandpass(lowcut, highcut, fs, order=order)
+  y = lfilter(b, a, data)
+  return y[-1]
+
+
+def butter_bandpass(lowcut=0.1, highcut=5.0, fs=50, order=1):
+  nyq = 0.5 * fs
+  low = lowcut / nyq
+  high = highcut / nyq
+  b, a = butter(order, [low, high], btype='band')
+  return b, a

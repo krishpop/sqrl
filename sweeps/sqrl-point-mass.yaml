@@ -1,4 +1,4 @@
-name: pointmass_sweep
+name: sqrl-pmass-sg-ts-imof-gam
 program: run_experiment.py
 method: bayes
 metric:
@@ -14,6 +14,7 @@ parameters:
     max: 0.75
     q: 0.05
   target_safety:
+    value: 0.2
     distribution: q_uniform
     min: 0.05
     max: 0.2
@@ -23,10 +24,23 @@ parameters:
     min: 0.95
     max: 1.
     q: 0.025
-  target_entropy:
-    distribution: categorical
-    values: [-16, -8]
-  initial_collect_steps:
-    value: 1000
-  env_str:
-    value: "DrunkSpiderShort"
+  init_means_output_factor:
+    values: [0.1, 0.01, 0.001]
+#    distribution: q_log_uniform
+#    min: -9
+#    max: -2
+#    q: 0.0001
+#  std_bias_init_value:
+#    distribution: q_uniform
+#    min: -0.5
+#    max: 0.5
+#    q: 0.1
+command:
+  - ${env}
+  - ${interpreter}
+  - ${program}
+  - "--gin_files"
+  - "sqrl_point_mass.gin"
+  - "--root_dir"
+  - "sqrl-sweeps/point_mass/sg-ts-imof-gam"
+  - ${args}

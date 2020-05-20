@@ -10,7 +10,7 @@ ENV_STR = 'DrunkSpiderShort'
 ENV_LOAD_FN= @point_mass.env_load_fn
 EP_LEN = 50
 ENV_WRAPPERS = []
-NUM_STEPS = 500000
+NUM_STEPS = 100000
 
 TRAIN_METRICS = [
     @metrics.AverageSuccessMetric(),
@@ -28,12 +28,13 @@ eval_fallen/metrics.AverageFallenMetric.batch_size = %NUM_ENVS
 
 ENV_METRIC_FACTORIES = []
 
-point_mass.env_load_fn.max_episode_steps = %EP_LEN
 metrics.AverageSuccessMetric.buffer_size = 30
-metrics.AverageSuccessMetric.buffer_size = 30
+metrics.AverageFallenMetric.buffer_size = 30
 
 point_mass.PointMassAcScaleEnv.domain_rand = True
 point_mass.PointMassAcNoiseEnv.domain_rand = True
+point_mass.env_load_fn.max_episode_steps = %EP_LEN
+point_mass.env_load_fn.reset_on_fall = True
 
 actor_distribution_network.ActorDistributionNetwork.preprocessing_combiner = (
     @misc.extract_observation_layer()

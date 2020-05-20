@@ -20,13 +20,16 @@ include 'trainer_default.gin'
 
 # GIN MACROS
 NUM_EVAL = 5
-AGENT_CLASS = 'sac_safe_online'
+AGENT_CLASS = 'sqrl'
 LEARNING_RATE = 5e-3
 
 # TRAINER BINDINGS
 trainer.train_eval.online_critic = True
 trainer.train_eval.n_envs = %NUM_ENVS
 trainer.train_eval.num_eval_episodes = %NUM_EVAL
+trainer.train_eval.lambda_initial = 1.
+trainer.train_eval.kstep_fail = 0
+
 
 metrics.AverageEarlyFailureMetric.buffer_size = %NUM_EVAL
 metrics.AverageEarlyFailureMetric.batch_size = 1
@@ -36,26 +39,26 @@ metrics.AverageEarlyFailureMetric.batch_size = 1
 # safe_dynamic_episode_driver.SafeDynamicEpisodeDriver.ep_history_unsafe = 2
 
 # AGENT BINDINGS
-safe_sac_agent.SafeSacAgentOnline.reward_scale_factor = 1.0
-safe_sac_agent.SafeSacAgentOnline.gamma = 0.99
-safe_sac_agent.SafeSacAgentOnline.target_update_tau = 0.01
-safe_sac_agent.SafeSacAgentOnline.target_update_period = 1
-safe_sac_agent.SafeSacAgentOnline.safety_pretraining = True
-safe_sac_agent.SafeSacAgentOnline.target_safety = 0.1
-safe_sac_agent.SafeSacAgentOnline.safety_gamma = 0.7
+safe_sac_agent.SqrlAgent.reward_scale_factor = 1.0
+safe_sac_agent.SqrlAgent.gamma = 0.99
+safe_sac_agent.SqrlAgent.target_update_tau = 0.01
+safe_sac_agent.SqrlAgent.target_update_period = 1
+safe_sac_agent.SqrlAgent.safety_pretraining = True
+safe_sac_agent.SqrlAgent.target_safety = 0.1
+safe_sac_agent.SqrlAgent.safety_gamma = 0.7
 
 ## AGENT OPTIMIZER BINDINGS
-safe_sac_agent.SafeSacAgentOnline.actor_optimizer = @ac_opt/tf.keras.optimizers.Adam()
+safe_sac_agent.SqrlAgent.actor_optimizer = @ac_opt/tf.keras.optimizers.Adam()
 ac_opt/tf.keras.optimizers.Adam.learning_rate = %ACTOR_LR
-safe_sac_agent.SafeSacAgentOnline.critic_optimizer = @cr_opt/tf.keras.optimizers.Adam()
+safe_sac_agent.SqrlAgent.critic_optimizer = @cr_opt/tf.keras.optimizers.Adam()
 cr_opt/tf.keras.optimizers.Adam.learning_rate = %CRITIC_LR
-safe_sac_agent.SafeSacAgentOnline.alpha_optimizer = @al_opt/tf.keras.optimizers.Adam()
+safe_sac_agent.SqrlAgent.alpha_optimizer = @al_opt/tf.keras.optimizers.Adam()
 al_opt/tf.keras.optimizers.Adam.learning_rate = %LEARNING_RATE
-safe_sac_agent.SafeSacAgentOnline.safety_critic_optimizer = @sc_opt/tf.keras.optimizers.Adam()
+safe_sac_agent.SqrlAgent.safety_critic_optimizer = @sc_opt/tf.keras.optimizers.Adam()
 sc_opt/tf.keras.optimizers.Adam.learning_rate = %LEARNING_RATE
-safe_sac_agent.SafeSacAgentOnline.lambda_optimizer = @lam_opt/tf.keras.optimizers.Adam()
+safe_sac_agent.SqrlAgent.lambda_optimizer = @lam_opt/tf.keras.optimizers.Adam()
 lam_opt/tf.keras.optimizers.Adam.learning_rate = %LEARNING_RATE
 
 # MISC
-safe_sac_agent.SafeSacAgentOnline.resample_counter = @resample_counter/py_metrics.CounterMetric()
+safe_sac_agent.SqrlAgent.resample_counter = @resample_counter/py_metrics.CounterMetric()
 cm/py_metrics.CounterMetric.name = "unsafe_ac_samples"

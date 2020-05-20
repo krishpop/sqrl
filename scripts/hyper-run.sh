@@ -4,8 +4,8 @@ do
 	do
 	    python train.py --root_dir=$EXP_DIR/baselines/collect-sg-${SG}-ts-${TS} \
 		--gin_file=point_mass_default.gin --gin_file=sac_safe_online.gin \
-		--gin_file=networks_tiny.gin --gin_param="safe_sac_agent.SafeSacAgentOnline.safety_gamma = ${SG}" \
-		--gin_param="safe_sac_agent.SafeSacAgentOnline.target_safety = ${TS}" \
+		--gin_file=networks_tiny.gin --gin_param="safe_sac_agent.SqrlAgent.safety_gamma = ${SG}" \
+		--gin_param="safe_sac_agent.SqrlAgent.target_safety = ${TS}" \
 		--gin_param="ENV_STR = 'DrunkSpiderShort-acnoise'" &> ~/outs/collect-sg-${SG}-ts-${TS}.out&
 	done
 done

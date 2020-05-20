@@ -275,16 +275,18 @@ def main(argv):
   env = load_environment()
   tf_env = tf_py_environment.TFPyEnvironment(env)
   global_step = tf.compat.v1.train.get_or_create_global_step()
-  tf_agent = safe_sac_agent.SafeSacAgent(
+  tf_agent = safe_sac_agent.SqrlAgent(
       tf_env.time_step_spec(),
       tf_env.action_spec(),
       train_step_counter=global_step)
   replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
       tf_agent.collect_data_spec)
-  test_agent = safe_sac_agent.SafeSacAgent(  # or use sac_agent.SacAgent
+  test_agent = safe_sac_agent.SqrlAgent(  # or use sac_agent.SacAgent
       tf_env.time_step_spec(),
       tf_env.action_spec(),
-      train_step_counter=global_step)
+      train_step_counter=global_step,
+      safety_pretraining=False,
+      train_critic_online=True)
   test_rb = tf_uniform_replay_buffer.TFUniformReplayBuffer(
       tf_agent.collect_data_spec)
 

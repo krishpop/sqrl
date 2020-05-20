@@ -40,26 +40,33 @@ def define_flags():
   flags.DEFINE_boolean('finetune', False, 'Fine-tuning task safety')
   flags.DEFINE_boolean('finetune_sc', False, 'Fine-tuning safety critic')
   flags.DEFINE_integer('num_steps', None, 'Number of training steps')
-  flags.DEFINE_integer('initial_collect_steps', 1000, 'Number of steps to collect with random policy')
+  flags.DEFINE_integer('initial_collect_steps', None, 'Number of steps to collect with random policy')
+  flags.DEFINE_boolean('online', None, 'Whether to train safety critic online')
   flags.DEFINE_boolean('debug_summaries', False, 'Debug summaries for critic and actor')
   flags.DEFINE_boolean('debug', False, 'Debug logging')
   flags.DEFINE_boolean('eager_debug', False, 'Debug in eager mode if True')
   flags.DEFINE_integer('seed', None, 'Seed to seed envs and algorithm with')
   flags.DEFINE_integer('num_threads', None, 'Max number of threads for TF to spin up')
+  flags.DEFINE_integer('batch_size', 256, 'batch size used for training')
 
   # Model args
   flags.DEFINE_integer('layer_size', None, 'Number of training steps')
-  flags.DEFINE_integer('batch_size', 256, 'batch size used for training')
+  flags.DEFINE_float('init_means_output_factor', None, 'Action initialization scale')
+  flags.DEFINE_float('std_bias_init_value', None, 'Actor stddev bias initial value')
 
   # Algorithm args
   flags.DEFINE_float('lr', None, 'Learning rate for all optimizers')
   flags.DEFINE_float('actor_lr', None, 'Learning rate for actor')
   flags.DEFINE_float('critic_lr', None, 'Learning rate for critic')
   flags.DEFINE_float('target_update_tau', None, 'Factor for soft update of the target networks')
-  flags.DEFINE_integer('target_update_period', 1, 'Period for soft update of the target networks')
+  flags.DEFINE_integer('target_update_period', None, 'Period for soft update of the target networks')
   flags.DEFINE_float('gamma', None, 'Future reward discount factor')
-  flags.DEFINE_float('reward_scale_factor', 1.0, 'Reward scale factor for SacAgent')
+  flags.DEFINE_float('reward_scale_factor', None, 'Reward scale factor for SacAgent')
   flags.DEFINE_float('gradient_clipping', None, 'Gradient clipping factor for SacAgent')
+  flags.DEFINE_integer('lambda_schedule_nsteps', None, 'Use linear lambda scheduler')
+  flags.DEFINE_float('lambda_initial', None, 'sets initial lambda value')
+  flags.DEFINE_float('lambda_final', None, 'Final lambda value (if using scheduler)')
+
   ## SAC args
   flags.DEFINE_float('entropy_lr', None, 'Learning rate for alpha')
   flags.DEFINE_integer('target_entropy', None, 'Target entropy for policy')
@@ -79,17 +86,18 @@ def define_flags():
   ## PointMass
   flags.DEFINE_float('action_noise', None, 'Action noise for point-mass environment')
   flags.DEFINE_float('action_scale', None, 'Action scale for point-mass environment')
+  flags.DEFINE_multi_integer('goal', None, 'Goal to move toward')
 
 
 define_flags()
 
 
 def load_prev_run(config):
-  api = wandb.Api(overrides=dict(entity='krshna', project='safemrl-2'))
+  api = wandb.Api(overrides=dict(entity='krshna', project='sqrl-neurips'))
   run = api.run(path=FLAGS.load_run)
   # Make path invariant to which machine training was done on
   exp_dir = os.environ.get('EXP_DIR')
-  root_dir = run.config['root_dir'].split('tfagents/')[-1]
+  root_dir = run.config['root_dir'].split('data/')[-1]
   load_path = osp.join(exp_dir, root_dir)
   assert osp.exists(load_path), 'tried to load path the does not exist: {}'.format(load_path)
   op_config = os.path.join(load_path, 'train/operative_config-0.gin')
@@ -114,12 +122,14 @@ def update_root(config):
 def gin_bindings_from_config(config, gin_bindings=[]):
   gin_bindings = gin_bindings or []
   agent_class = gin.query_parameter('%AGENT_CLASS')
+  logging.info("Agent class: {}".format(agent_class))
   # Configure agent prefixes
-  if agent_class == 'sac_safe_online':
-    gin_bindings.append('safe_sac_agent.SafeSacAgentOnline.safety_gamma = {}'.format(config.safety_gamma))
+  if agent_class == 'sqrl':
+    agent_prefix = 'safe_sac_agent.SqrlAgent'
+    if config.safety_gamma:
+      gin_bindings.append('safe_sac_agent.SqrlAgent.safety_gamma = {}'.format(config.safety_gamma))
     if config.target_safety:
-      gin_bindings.append('safe_sac_agent.SafeSacAgentOnline.target_safety = {}'.format(config.target_safety))
-    agent_prefix = 'safe_sac_agent.SafeSacAgentOnline'
+      gin_bindings.append('safe_sac_agent.SqrlAgent.target_safety = {}'.format(config.target_safety))
   elif agent_class == 'sac':
     agent_prefix = 'sac_agent.SacAgent'
   elif agent_class == 'wcpg':
@@ -151,7 +161,16 @@ def gin_bindings_from_config(config, gin_bindings=[]):
         config.update(dict(entropy_lr=sc_lr), allow_val_change=True)
 
     # Generic agent bindings
-    gin_bindings.append('{}.reward_scale_factor = {}'.format(agent_prefix, config.reward_scale_factor))
+    if config.init_means_output_factor:
+      gin_bindings.append('agents.normal_projection_net.init_means_output_factor = {}'.format(
+        config.init_means_output_factor))
+    if config.std_bias_init_value:
+      gin_bindings.append('agents.normal_projection_net.std_bias_initializer_value = {}'.format(
+        config.std_bias_init_value
+      ))
+
+    if config.reward_scale_factor:
+      gin_bindings.append('{}.reward_scale_factor = {}'.format(agent_prefix, config.reward_scale_factor))
     if config.target_update_tau:
       gin_bindings.append('{}.target_update_tau = {}'.format(agent_prefix, config.target_update_tau))
     gin_bindings.append('{}.target_update_period = {}'.format(agent_prefix, config.target_update_period))
@@ -167,7 +186,7 @@ def gin_bindings_from_config(config, gin_bindings=[]):
       gin_bindings.append('al_opt/tf.keras.optimizers.Adam.learning_rate = {}'.format(config.entropy_lr))
 
   if not wandb.run.resumed:
-    if config.safety_lr and agent_class in ['sac_safe', 'sac_safe_online']:
+    if config.safety_lr and agent_class in ['sqrl']:
       gin_bindings.append('sc_opt/tf.keras.optimizers.Adam.learning_rate = {}'.format(config.safety_lr))
     if config.critic_lr:
       if agent_prefix == 'ensemble_sac_agent.EnsembleSacAgent':
@@ -192,9 +211,9 @@ def gin_bindings_from_config(config, gin_bindings=[]):
     if config.action_noise:
       gin_bindings.append('point_mass.PointMassEnv.action_noise = {}'.format(config.action_noise))
     if config.action_scale:
-      gin_bindings.append('point_mass.PointMassEnv.action_noise = {}'.format(config.action_scale))
+      gin_bindings.append('point_mass.PointMassEnv.action_scale = {}'.format(config.action_scale))
     if config.finetune:
-      gin_bindings.append("point_mass.GoalConditionedPointWrapper.goal = (6, 5)")
+      gin_bindings.append("point_mass.env_load_fn.goal = {}".format(tuple(config.goal)))
 
   if config.initial_collect_steps:
     gin_bindings.append("INITIAL_NUM_STEPS = {}".format(config.initial_collect_steps))
@@ -217,7 +236,7 @@ def main(_):
   name = FLAGS.name
   if FLAGS.seed is not None and name:
     name = '-'.join([name, str(FLAGS.seed)])
-  run = wandb.init(name=name, sync_tensorboard=True, entity='krshna', project='safemrl-2', config=FLAGS,
+  run = wandb.init(name=name, sync_tensorboard=True, entity='krshna', project='sqrl-neurips', config=FLAGS,
                    monitor_gym=FLAGS.monitor, config_exclude_keys=EXCLUDE_KEYS, notes=FLAGS.notes,
                    resume=FLAGS.resume_id)
 

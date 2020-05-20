@@ -1,6 +1,8 @@
 try:
   import highway_env.envs
+  imported_highway = True
 except ImportError:
+  imported_highway = False
   print('could not import highway_env')
 
 try:
@@ -18,7 +20,7 @@ from tf_agents.environments import wrappers
 from tf_agents.policies import random_py_policy
 from tf_agents.drivers import py_driver
 from tf_agents.utils import common, test_utils
-from safemrl.envs import minitaur, cube_env, highway
+from safemrl.envs import minitaur, cube_env, highway, safety_gym_envs
 
 
 def profile_env(env_str, max_ep_len, n_steps=None, env_wrappers=[]):
@@ -41,12 +43,13 @@ def profile_env(env_str, max_ep_len, n_steps=None, env_wrappers=[]):
   policy_state = policy.get_initial_state()
   for _ in range(n_steps):
     time_step, policy_state = driver.run(time_step, policy_state)
-  updated_s = pstats.Stats(profile[0])
-  print(updated_s)
+  stats = pstats.Stats(profile[0])
+  stats.print_stats()
 
 
 # profile_env('SafemrlCube-v0', 500, env_wrappers=(cube_env.CubeTaskAgnWrapper,))
-profile_env('highway-v0', 40, env_wrappers=(FlattenObservation,
-                                             highway.ContAcWrapper,
-                                             highway.TaskAgnWrapper,))
+# profile_env('highway-v0', 40, env_wrappers=(FlattenObservation,
+#                                             highway.ContAcWrapper,
+#                                             highway.TaskAgnWrapper,))
 # profile_env("MinitaurGoalVelocityEnv-v0", 500, env_wrappers=(minitaur.TaskAgnWrapper,))
+# profile_env("SafeExpPointEnv-v0", 30)

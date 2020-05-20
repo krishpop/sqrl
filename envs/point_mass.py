@@ -27,9 +27,13 @@ from __future__ import print_function
 import gin
 import gym
 import numpy as np
-from tf_agents.environments import gym_wrapper
-from tf_agents.environments import wrappers
-from tf_agents.trajectories import time_step as ts
+try:
+  from tf_agents.environments import wrappers
+  from tf_agents.trajectories import time_step as ts
+  loaded_agents = True
+except ImportError:
+  loaded_agents = False
+  print('did not load tf_agents')
 
 # Implementation of PointMass environment from Benjamin Eyesenbach:
 #    https://github.com/google-research/google-research/tree/master/sorb
@@ -120,7 +124,7 @@ class PointMassEnv(gym.Env):
 
   def __init__(self,
                env_name='DrunkSpiderShort',
-               start=(0, 3),
+               start=None,
                resize_factor=(1,1),
                action_noise=0.,
                action_scale=1.,
@@ -141,7 +145,10 @@ class PointMassEnv(gym.Env):
       action_pen: penlaty for taking actions
     """
     walls = env_name
-    self._start = start if start is None else np.array(start, dtype=float)
+    if start is None:
+      self._start = start
+    else:
+      self._start = np.array([x + .5 for x in start], dtype=np.float32)
     self.state = self._start
 
     if resize_factor[0] > 1 or resize_factor[1] > 1:
@@ -171,9 +178,7 @@ class PointMassEnv(gym.Env):
                 low=np.array([0.0, 0.0]),
                 high=np.array([self._height, self._width]),
                 dtype=np.float32),
-        'fallen':
-            gym.spaces.Discrete(2),
-        'task_agn_rew':
+        'task_agn_rew':  # whether or not agent has fallen
             gym.spaces.Box(low=np.array(0), high=np.array(1))
     })
     self._validate_start_goal()
@@ -195,7 +200,7 @@ class PointMassEnv(gym.Env):
 
   def _validate_start_goal(self):
     if self._start is not None:
-      assert not self.is_out_of_bounds(self._start), \
+      assert not self._is_out_of_bounds(self._start), \
           'start must be in bounds of env'
       assert not self.is_fallen(self._start), 'start must not be in fallen state'
 
@@ -207,21 +212,21 @@ class PointMassEnv(gym.Env):
     assert not self.is_fallen(state)
     return state
 
-  def reset(self, reset_args=None):
-    self.state = reset_args or self._sample_empty_state()
-    obs = dict(observation=self.state.copy(), fallen=False, task_agn_rew=0.)
-    return obs
-
-  def is_out_of_bounds(self, state):
-    if not self.observation_space['observation'].contains(state):
-      return True
-    return False
+  def _is_out_of_bounds(self, state):
+    return not self.observation_space['observation'].contains(state)
 
   def is_fallen(self, state=None):
     if state is None:
       state = self.state
+    if self._is_out_of_bounds(state):
+      return True
     (i, j) = self._discretize_state(state)
     return self._walls[i, j] == 1
+
+  def reset(self, reset_args=None):
+    self.state = reset_args or self._sample_empty_state()
+    obs = dict(observation=self.state.copy(), task_agn_rew=0.)
+    return obs
 
   def step(self, action):
     if len(action.shape) == 2:
@@ -231,33 +236,28 @@ class PointMassEnv(gym.Env):
       action += (np.random.sample((2,)) - 0.5) * self._action_noise
     action = np.clip(action, self.action_space.low * self._action_scale, self.action_space.high * self._action_scale)
     num_substeps = 10
+    fallen, rew = False, 0.
+
     dt = 1.0 / num_substeps
     num_axis = len(action)
-    rew = 0
-    fallen = False
-    task_agn = 0.
+
     for _ in range(num_substeps):
+      new_state = self.state.copy()
       for axis in range(num_axis):
-        new_state = self.state.copy()
         new_state[axis] += dt * action[axis]
-        if self.is_out_of_bounds(new_state):
+        if self.is_fallen(new_state):
+          rew = -1. * self._is_out_of_bounds(new_state)
           new_state = np.clip(new_state, self.observation_space['observation'].low,
                               self.observation_space['observation'].high)
-          obs = dict(observation=new_state, fallen=True, task_agn_rew=1.)
-          return obs, -1., True, {}
-        elif self.is_fallen(new_state):
-          # rew adds -1 if in well for one full step
-          # rew -= 1.0 / num_substeps
           fallen = True
-          task_agn = 1.
-        self.state = new_state
-        if fallen:
-          break
+      self.state = new_state
+      if fallen:
+        break
     # control rew discourages large actions, in range [-1.414*c, 0]
-    rew += -1.0 * np.linalg.norm(action) * self._action_pen
+    rew += -np.linalg.norm(action) * self._action_pen
     obs = dict(
-        observation=self.state.copy(), fallen=fallen, task_agn_rew=task_agn)
-    return obs, rew + self._alive_bonus, False, {}
+        observation=self.state.copy(), task_agn_rew=float(fallen))
+    return obs, rew + self._alive_bonus, fallen, {}
 
   @property
   def walls(self):
@@ -316,13 +316,14 @@ class GoalConditionedPointWrapper(gym.Wrapper):
 
   def __init__(self,
                env,
-               goal=(7, 3),
+               goal=None,
                normalize_obs=False,
                task_rew_type='l2',
                reset_on_fall=True,
-               goal_bounds=[(6,2), (7,4)],
+               goal_bounds=None,
                threshold_distance=1.0,
-               fall_penalty=0.):
+               fall_penalty=0.,
+               max_episode_steps=30):
     """Initialize the environment.
 
     Args:
@@ -336,15 +337,18 @@ class GoalConditionedPointWrapper(gym.Wrapper):
         at most this far away from one another.
       fall_penalty: penalty for falls
     """
-    self._default_goal = goal if goal is None else np.array(goal)
+    self._default_goal = goal if goal is None else np.array([x + .5 for x in goal], dtype=np.float32)
     self._task_rew_type = task_rew_type
     self._reset_on_fall = reset_on_fall
     self._threshold_distance = threshold_distance
     self._fall_penalty = fall_penalty
+    self._max_episode_steps = max_episode_steps
+    self._steps_taken = 0
     self._norm_obs = normalize_obs
+    self._seed = env._seed
 
     if normalize_obs:
-      obs_space = self.observation_space = gym.spaces.Box(
+      obs_space = gym.spaces.Box(
           low=np.array([0., 0.]), high=np.array([1., 1.]), dtype=np.float32)
     else:
       obs_space = env.observation_space['observation']
@@ -354,14 +358,13 @@ class GoalConditionedPointWrapper(gym.Wrapper):
     else:
       goal_space = env.observation_space['observation']
     if goal:
-      assert goal_space.contains(np.array(goal)), 'goal not in goal space'
+      assert goal_space.contains(np.array(goal)), 'goal: {} not in goal space: {}'.format(goal, goal_bounds)
     super(GoalConditionedPointWrapper, self).__init__(env)
 
     # overwrites observation space to include goals
     self.observation_space = gym.spaces.Dict({
         'observation': obs_space,
         'goal': goal_space,
-        'fallen': env.observation_space['fallen'],
         'task_agn_rew': env.observation_space['task_agn_rew']
     })
     self.reset()  # sets up goal value
@@ -370,8 +373,51 @@ class GoalConditionedPointWrapper(gym.Wrapper):
     return np.array(
         [obs[0] / float(self.env._height), obs[1] / float(self.env._width)])  # pylint: disable=protected-access
 
+  def _sample_goal(self, obs):
+    goal_dist = 0
+    state = obs['observation']
+    while goal_dist < 4:
+      goal = self.observation_space['goal'].sample()
+      goal_dist = np.abs(state - goal).sum()
+    return (obs, goal)
+
+  def _compute_reward(self, observation=None, goal=None):
+    task_rew = 0.
+    if observation is None:
+      observation = self.state
+    if goal is None:
+      goal = self._goal
+
+    if self._is_done(self.state, self.goal):
+      task_rew = 30.
+    elif self._task_rew_type == 'l1':
+      # task_rew range: [-1, 0]
+      max_dist = self.env._height + self.env._width
+      task_rew += -np.abs(observation - goal).sum() / max_dist
+    elif self._task_rew_type == 'l2':
+      max_dist = np.sqrt(self.env._height ** 2 + self.env._width ** 2)
+      task_rew += -np.linalg.norm(observation - goal) / max_dist
+    elif self._task_rew_type == '+l2':  # positive l2
+      max_dist = np.sqrt(self.env._height ** 2 + self.env._width ** 2)
+      task_rew += 1 - np.linalg.norm(observation - goal) / max_dist
+    elif self._task_rew_type == '+l1':
+      max_dist = self.env._height + self.env._width
+      task_rew += 1 - np.abs(observation - goal).sum() / max_dist
+    elif self._task_rew_type == '-1':  # alive penalty
+      task_rew += -.1
+    return task_rew
+
+  def _is_done(self, obs, goal):
+    """Determines whether goal reached."""
+    return np.linalg.norm(obs - goal) < self._threshold_distance
+
+  @property
+  def goal(self):
+    return self._goal
+
   def reset(self):
     """Resets environment, sampling goal if self._sample_goal == True."""
+    self._steps_taken = 0
     obs = self.env.reset()
     if self._default_goal is not None:
       (obs, goal) = (obs, self._default_goal.copy())
@@ -383,143 +429,138 @@ class GoalConditionedPointWrapper(gym.Wrapper):
       obs['observation'] = self._normalize_obs(obs['observation'])
     return obs
 
-  def _sample_goal(self, obs):
-    goal_dist = 0
-    state = obs['observation']
-    while goal_dist < 4:
-      goal = self.observation_space['goal'].sample()
-      goal_dist = np.abs(state - goal).sum()
-    return (obs, goal)
-
   def step(self, action):
+    self._steps_taken += 1
+    assert self._steps_taken <= self._max_episode_steps, "Did not call reset after {} steps".format(self._steps_taken)
+
     obs, rew, done, _ = self.env.step(action)
-    obs['goal'] = goal = self._goal
+    obs['goal'] = self.goal
     if self._norm_obs:
       obs['observation'] = self._normalize_obs(obs['observation'])
-    state = obs['observation']
-    if done:  # this means point mass fell outside bounds of env
+    self.state = obs['observation']
+    if done and self._reset_on_fall:
       return obs, self._fall_penalty, done, {}
 
-    task_rew = rew  # includes alive bonus and fallen in well penalty..
-    if self._task_rew_type == 'l1':
-      # task_rew range: [-1, 0]
-      max_dist = self.env._height + self.env._width
-      task_rew += -np.abs(state - goal).sum() / max_dist
-    elif self._task_rew_type == 'l2':
-      max_dist = np.sqrt(self.env._height**2 + self.env._width**2)
-      task_rew += -np.linalg.norm(state - goal) / max_dist
-    elif self._task_rew_type == '+l2':  # positive l2
-      max_dist = np.sqrt(self.env._height ** 2 + self.env._width ** 2)
-      task_rew += 1 - np.linalg.norm(state - goal) / max_dist
-    elif self._task_rew_type == '+l1':
-      max_dist = self.env._height + self.env._width
-      task_rew += 1 - np.abs(state - goal).sum() / max_dist
-    elif self._task_rew_type == '-1':  # alive penalty
-      task_rew += -.1
+    task_rew = self._compute_reward()
 
-    if self.is_done(state, goal) and not obs['fallen']:
-      task_rew = 1.
-      done = True
-    elif obs['fallen']:  # if fallen into well
-      done = True if self._reset_on_fall else False
-      task_rew = self._fall_penalty
-
-    return obs, task_rew, done, {}
-
-  def is_done(self, obs, goal):
-    """Determines whether observation equals goal."""
-    return np.linalg.norm(obs - goal) < self._threshold_distance
+    return obs, task_rew, self._is_done(self.state, self.goal), {}
 
 
-class NonTerminatingTimeLimit(wrappers.PyEnvironmentBaseWrapper):
-  """Resets the environment without setting done = True.
+class SafetyGymWrapper(gym.Wrapper):
+  def __init__(self, env, fall_cost=1.):
+    super().__init__(env)
+    self.observation_space = env.observation_space['observation']
+    self._fall_cost = fall_cost
 
-  Resets the environment if either these conditions holds:
-    1. The base environment returns done = True
-    2. The time limit is exceeded.
-  """
+  def reset(self):
+    obs = super().reset()
+    return obs['observation']
 
-  def __init__(self, env, duration):
-    super(NonTerminatingTimeLimit, self).__init__(env)
-    self._duration = duration
-    self._step_count = None
+  def step(self, action):
+    o, r, d, i = super().step(action)
+    i.update({'cost': o['task_agn_rew'] * self._fall_cost})
+    o = o['observation']
+    return o, r, d, i
 
-  def _reset(self):
-    self._step_count = 0
-    return self._env.reset()
 
-  @property
-  def duration(self):
-    return self._duration
+if loaded_agents:
+  class NonTerminatingTimeLimit(wrappers.PyEnvironmentBaseWrapper):
+    """Resets the environment without setting done = True.
 
-  def _step(self, action):
-    if self._step_count is None:
-      return self.reset()
+    Resets the environment if either these conditions holds:
+      1. The base environment returns done = True
+      2. The time limit is exceeded.
+    """
 
-    timestep = self._env.step(action)  # pylint: disable=protected-access
-
-    self._step_count += 1
-    if self._step_count >= self._duration or timestep.is_last():
+    def __init__(self, env, duration):
+      super(NonTerminatingTimeLimit, self).__init__(env)
+      self._duration = duration
       self._step_count = None
 
-    return timestep
+    def _reset(self):
+      self._step_count = 0
+      return self._env.reset()
+
+    @property
+    def duration(self):
+      return self._duration
+
+    def _step(self, action):
+      if self._step_count is None:
+        return self.reset()
+
+      timestep = self._env.step(action)  # pylint: disable=protected-access
+
+      self._step_count += 1
+      if self._step_count >= self._duration or timestep.is_last():
+        self._step_count = None
+
+      return timestep
 
 
-@gin.configurable
-class TimeLimitBonus(wrappers.PyEnvironmentBaseWrapper):
-  """End episodes after specified steps, adding early bonus/penalty."""
+  @gin.configurable
+  class TimeLimitBonus(wrappers.PyEnvironmentBaseWrapper):
+    """End episodes after specified steps, adding early bonus/penalty."""
 
-  def __init__(self, env, duration, early_term_bonus=1., early_term_penalty=1.,
-               time_limit_penalty=-30.):
-    super(TimeLimitBonus, self).__init__(env)
-    self._duration = duration
-    self._num_steps = None
-    self._early_term_bonus = early_term_bonus
-    self._early_term_penalty = early_term_penalty
-    self._time_limit_penalty = time_limit_penalty
-
-  def _reset(self):
-    self._num_steps = 0
-    return self._env.reset()
-
-  def _step(self, action):
-    if self._num_steps is None:
-      return self.reset()
-
-    time_step = self._env.step(action)
-
-    self._num_steps += 1
-    if self._num_steps >= self._duration:
-      time_step = time_step._replace(step_type=ts.StepType.LAST)
-
-    if time_step.is_last():
-      if not time_step.observation['fallen']:
-        reward = (
-            time_step.reward * self._early_term_bonus *
-            (self._duration - self._num_steps))
-        if self._duration == self._num_steps and self._time_limit_penalty:
-          reward += self._time_limit_penalty
-      else:
-        reward = (time_step.reward - self._early_term_penalty *
-                  (self._duration - self._num_steps + 1))
-      time_step = time_step._replace(
-          reward=reward.astype(time_step.reward.dtype))
-
+    def __init__(self, env, max_episode_steps, early_term_bonus=1., early_term_penalty=-1.,
+                 time_limit_penalty=-30.):
+      super(TimeLimitBonus, self).__init__(env)
+      self._duration = max_episode_steps
       self._num_steps = None
+      self._early_term_bonus = early_term_bonus
+      self._early_term_penalty = -abs(early_term_penalty)
+      self._time_limit_penalty = -abs(time_limit_penalty)
 
-    return time_step
+    def _reset(self):
+      self._num_steps = 0
+      return self._env.reset()
 
-  @property
-  def duration(self):
-    return self._duration
+    def _step(self, action):
+      if self._num_steps is None:
+        return self.reset()
+
+      time_step = self._env.step(action)
+
+      self._num_steps += 1
+      reached_time_limit = False
+      if self._num_steps >= self._duration:
+        time_step = time_step._replace(step_type=ts.StepType.LAST)
+        reached_time_limit = True
+
+      if time_step.is_last():  # if episode terminated
+        reward = time_step.reward
+        if not time_step.observation['task_agn_rew']:  # and agent hasn't fallen
+          if not reached_time_limit:
+            reward = (time_step.reward + self._early_term_bonus *
+                      (self._duration - self._num_steps))  # add early termination bonus (if duration < num_steps
+          elif reached_time_limit and self._time_limit_penalty:
+            reward = time_step.reward + self._time_limit_penalty
+        else:
+          reward = (time_step.reward + self._early_term_penalty * (not reached_time_limit) *
+                    (self._duration - self._num_steps + 1))
+
+        time_step = time_step._replace(
+            reward=reward.astype(time_step.reward.dtype))
+
+        self._num_steps = None
+
+      return time_step
+
+    @property
+    def duration(self):
+      return self._duration
 
 
 @gin.configurable
 def env_load_fn(environment_name='DrunkSpiderShort',
-                gym_env_wrappers=[],
                 max_episode_steps=50,
                 resize_factor=(1,1),
-                terminate_on_timeout=True):
+                terminate_on_timeout=True,
+                start=(0, 3), goal=(7,3), goal_bounds=[(6,2), (7,4)],
+                fall_penalty=0.,
+                reset_on_fall=False,
+                gym_env_wrappers=[],
+                gym=False):
   """Loads the selected environment and wraps it with the specified wrappers.
 
   Args:
@@ -534,20 +575,34 @@ def env_load_fn(environment_name='DrunkSpiderShort',
   Returns:
     A PyEnvironmentBase instance.
   """
-  # Env defaultsshould be configured via gin
+  if resize_factor != (1, 1):
+    if start:
+      start = (start[0] * resize_factor[0], start[1] * resize_factor[1])
+    if goal:
+      goal = (goal[0] * resize_factor[0], goal[1] * resize_factor[1])
+    if goal_bounds:
+      goal_bounds = [(g[0] * resize_factor[0], g[1] * resize_factor[1]) for g in goal_bounds]
+
   if 'acnoise' in environment_name.split('-'):
     environment_name = environment_name.split('-')[0]
     gym_env = PointMassAcNoiseEnv(
-      env_name=environment_name, resize_factor=resize_factor)
+      start=start, env_name=environment_name, resize_factor=resize_factor)
   elif 'acscale' in environment_name.split('-'):
     environment_name = environment_name.split('-')[0]
     gym_env = PointMassAcScaleEnv(
-      env_name=environment_name, resize_factor=resize_factor)
+      start=start, env_name=environment_name, resize_factor=resize_factor)
   else:
     gym_env = PointMassEnv(
-        environment_name, resize_factor=resize_factor)
+        start=start, env_name=environment_name, resize_factor=resize_factor)
 
-  gym_env = GoalConditionedPointWrapper(gym_env)
+  gym_env = GoalConditionedPointWrapper(gym_env, goal=goal, goal_bounds=goal_bounds, fall_penalty=-abs(fall_penalty),
+                                        reset_on_fall=reset_on_fall, max_episode_steps=max_episode_steps)
+  for wrapper in gym_env_wrappers:
+    gym_env = wrapper(gym_env)
+  if gym:
+    return gym_env
+
+  from tf_agents.environments import gym_wrapper
   env = gym_wrapper.GymWrapper(
       gym_env, discount=1.0, auto_reset=True, simplify_box_bounds=False)
 
