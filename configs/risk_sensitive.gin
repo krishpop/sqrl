@@ -1,0 +1,5 @@
+import safemrl.trainer
+
+trainer.train_eval.lambda_schedule_nsteps = 10000
+trainer.train_eval.lambda_initial = 0.
+trainer.train_eval.lambda_final = 10.

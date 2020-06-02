@@ -73,7 +73,7 @@ def normal_projection_net(action_spec,
 
 @gin.configurable
 def std_clip_transform(stddevs):
-  stddevs = tf.nest.map_structure(lambda t: tf.clip_by_value(t, -10, 2),
+  stddevs = tf.nest.map_structure(lambda t: tf.clip_by_value(t, -20, 2),
                                   stddevs)
   return tf.exp(stddevs)
 
@@ -297,6 +297,7 @@ class DistributionalCriticNetwork(network.DistributionNetwork):
   def __init__(
       self,
       input_tensor_spec,
+      obs_preprocessing_combiner=misc.extract_observation_layer,
       preprocessing_layer_size=64,
       joint_fc_layer_params=(64,),
       joint_dropout_layer_params=None,
@@ -333,26 +334,30 @@ class DistributionalCriticNetwork(network.DistributionNetwork):
     assert len(input_tensor_spec) == 3, 'input_tensor_spec should contain obs, ac, and alpha specs'
     observation_spec, action_spec, alpha_spec = input_tensor_spec
 
-    if isinstance(observation_spec, collections.OrderedDict):
-      logging.debug("building layers with obs extract!")
-      preprocessing_layers = ([misc.extract_observation_layer(), tf.keras.layers.Dense(preprocessing_layer_size)],
-                              [tf.keras.layers.Lambda(lambda x: x)],
-                              [tf.keras.layers.Dense(preprocessing_layer_size)])
-    else:
-      preprocessing_layers = (tf.keras.layers.Dense(preprocessing_layer_size),
-                              tf.keras.layers.Lambda(lambda x: x),
-                              tf.keras.layers.Dense(preprocessing_layer_size))
- 
-    preprocessing_combiner = tf.keras.layers.Concatenate(axis=-1)
+    preprocessing_combiner = misc.concatenate_lambda_layer()
  
     output_spec = tensor_spec.TensorSpec(shape=(1,), dtype=tf.float32, name='R')
 
     super(DistributionalCriticNetwork, self).__init__(
         input_tensor_spec=input_tensor_spec, output_spec=output_spec, state_spec=(), name=name)
 
+    pre_obs = tensor_spec.TensorSpec(shape=(preprocessing_layer_size,), dtype=tf.float32, name='pre_o')
+    pre_alph = tensor_spec.TensorSpec(shape=(preprocessing_layer_size//2,), dtype=tf.float32,
+                                      name='pre_alph')
+
+    self._obs_encoder = encoding_network.EncodingNetwork(
+        observation_spec, preprocessing_combiner=obs_preprocessing_combiner(),
+        fc_layer_params=(preprocessing_layer_size,), kernel_initializer=kernel_initializer
+    )
+    self._alph_encoder = encoding_network.EncodingNetwork(
+      alpha_spec, fc_layer_params=(preprocessing_layer_size//2,), kernel_initializer=kernel_initializer
+    )
+
+    self.encoder_input_tensor_spec = (pre_obs, action_spec, pre_alph)
+
     self._encoder = encoding_network.EncodingNetwork(
-        input_tensor_spec,
-        preprocessing_layers=preprocessing_layers,
+        self.encoder_input_tensor_spec,
+        preprocessing_layers=None,
         preprocessing_combiner=preprocessing_combiner,
         fc_layer_params=joint_fc_layer_params,
         dropout_layer_params=joint_dropout_layer_params,
@@ -362,14 +367,20 @@ class DistributionalCriticNetwork(network.DistributionNetwork):
     self._projection_network = _critic_normal_projection_net(output_spec)
 
   def call(self, observations, step_type, network_state=(), training=False):
+    obs, ac, alpha = observations
+    pre_obs, _ = self._obs_encoder(obs, step_type=step_type, network_state=network_state,
+                                   training=training)
+    pre_alpha, _ = self._alph_encoder(alpha, step_type=step_type, network_state=network_state,
+                                       training=training)
+    observations = (pre_obs, ac, pre_alpha)
     state, network_state = self._encoder(
       observations,
       step_type=step_type,
       network_state=network_state,
       training=training)
-    outer_rank = nest_utils.get_outer_rank(observations, self.input_tensor_spec)
-    output_actions = self._projection_network(state, outer_rank)
-    return output_actions, network_state
+    outer_rank = nest_utils.get_outer_rank(observations, self.encoder_input_tensor_spec)
+    q_distribution, _ = self._projection_network(state, outer_rank)
+    return q_distribution, network_state
 
 
 @gin.configurable
@@ -377,6 +388,7 @@ class WcpgActorNetwork(network.Network):
   def __init__(self,
                input_tensor_spec,
                output_tensor_spec,
+               obs_preprocessing_combiner=misc.extract_observation_layer,
                preprocessing_layer_size=32,
                fc_layer_params=(32,),
                dropout_layer_params=None,
@@ -391,14 +403,20 @@ class WcpgActorNetwork(network.Network):
       name=name)
 
     observation_spec, alpha_spec = input_tensor_spec
-    if isinstance(observation_spec, collections.OrderedDict):
-      preprocessing_layers = [[misc.extract_observation_layer(), tf.keras.layers.Dense(preprocessing_layer_size)],
-                              [tf.keras.layers.Dense(preprocessing_layer_size/2)]]
-    else:
-      preprocessing_layers = [tf.keras.layers.Dense(preprocessing_layer_size),
-                              tf.keras.layers.Dense(preprocessing_layer_size/2)]
- 
-    preprocessing_combiner = tf.keras.layers.Concatenate(axis=-1)
+
+    pre_obs = tensor_spec.TensorSpec(shape=(preprocessing_layer_size,), dtype=tf.float32, name='pre_o')
+    pre_alph = tensor_spec.TensorSpec(shape=(preprocessing_layer_size//2,), dtype=tf.float32,
+                                      name='pre_alph')
+
+    self._obs_encoder = encoding_network.EncodingNetwork(
+        observation_spec, preprocessing_combiner=obs_preprocessing_combiner(),
+        fc_layer_params=(preprocessing_layer_size,), kernel_initializer=kernel_initializer
+    )
+    self._alph_encoder = encoding_network.EncodingNetwork(
+      alpha_spec, fc_layer_params=(preprocessing_layer_size//2,), kernel_initializer=kernel_initializer
+    )
+
+    self.encoder_input_tensor_spec = (pre_obs, pre_alph)
 
     self._output_tensor_spec = output_tensor_spec
     flat_action_spec = tf.nest.flatten(output_tensor_spec)
@@ -409,9 +427,11 @@ class WcpgActorNetwork(network.Network):
       raise ValueError('Only float actions are supported by this network.')
 
     self._alpha_spec = alpha_spec
+    preprocessing_combiner = misc.concatenate_lambda_layer()
+
     self._encoder = encoding_network.EncodingNetwork(
-      input_tensor_spec,
-      preprocessing_layers=preprocessing_layers,
+      self.encoder_input_tensor_spec,
+      preprocessing_layers=None,
       preprocessing_combiner=preprocessing_combiner,
       fc_layer_params=fc_layer_params,
       dropout_layer_params=dropout_layer_params,
@@ -425,6 +445,12 @@ class WcpgActorNetwork(network.Network):
             name='action')
 
   def call(self, observations, step_type=(), network_state=(), training=False):
+    obs, alph = observations
+    pre_obs, _ = self._obs_encoder(obs, step_type=step_type,
+                                   network_state=network_state, training=training)
+    pre_alph, _ = self._alph_encoder(alph, step_type=step_type,
+                                     network_state=network_state, training=training)
+    observations = (pre_obs, pre_alph)
     state, network_state = self._encoder(observations, step_type=step_type,
                                          network_state=network_state, training=training)
     return self._action_layer(state), network_state
@@ -445,10 +471,12 @@ class WcpgPolicy(actor_policy.ActorPolicy):
                alpha_sampler=None, observation_normalizer=None, clip=True,
                training=False, name="WcpgPolicy"):
     info_spec = WcpgPolicyInfo(alpha=actor_network.alpha_spec)
-    super(WcpgPolicy, self).__init__(time_step_spec, action_spec, actor_network, info_spec,
-                                     observation_normalizer, clip, training, name)
+    super(WcpgPolicy, self).__init__(time_step_spec=time_step_spec, action_spec=action_spec,
+                                     actor_network=actor_network, info_spec=info_spec,
+                                     observation_normalizer=observation_normalizer,
+                                     clip=clip, training=training, name=name)
     self._alpha = alpha
-    self._alpha_sampler = alpha_sampler or (lambda: np.random.uniform(0.1, 1., dtype='float32'))
+    self._alpha_sampler = alpha_sampler or (lambda: np.random.uniform(0.1, 1.))
 
   @property
   def alpha(self):
@@ -456,8 +484,8 @@ class WcpgPolicy(actor_policy.ActorPolicy):
       self._alpha = self._alpha_sampler()
     return self._alpha
 
-  def _apply_actor_network(self, time_step, policy_state, mask=None):
-    observation = time_step.observation
+  def _apply_actor_network(self, time_step, step_type, policy_state, mask=None):
+    observation = time_step
 
     if self._observation_normalizer:
       observation = self._observation_normalizer.normalize(observation)
@@ -469,7 +497,7 @@ class WcpgPolicy(actor_policy.ActorPolicy):
         observation = nest_utils.batch_nested_array(observation)
 
     alpha = np.array([self.alpha])[None]
-    return self._actor_network((observation['observation'], alpha), time_step.step_type, policy_state,
+    return self._actor_network((observation, alpha), step_type, policy_state,
                                training=self._training)
 
   def _distribution(self, time_step, policy_state):
@@ -631,6 +659,7 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
     if fail_prob_safe.shape.as_list()[0] == 0:
       # picks safest action
       safe_idx = tf.argmin(fail_prob)
+      return None
     else:
       sampled_ac = tf.gather(sampled_ac, safe_ac_idx)
       # picks most unsafe "safe" action
@@ -647,8 +676,10 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
           # standard rejection sampling with prob proportional to original policy
           log_prob = common.log_probability(actions, sampled_ac, self.action_spec)
           safe_idx = tfp.distributions.Categorical(log_prob).sample()
-        else:
+        elif self._sampling_method == 'risky':
           # picks random risky safe action, weighted by fail_prob_safe (so higher weight for less safe actions)
+          safe_idx = tfp.distributions.Categorical([fail_prob_safe]).sample()
+        elif self._sampling_method == 'safe':
           safe_idx = tfp.distributions.Categorical([fail_prob_safe]).sample()
 
       safe_idx = tf.reshape(safe_idx, [-1])[0]
@@ -673,8 +704,8 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
                                                 training=self._training)
     # EDIT 5/18 - training now determines whether safe/unsafe actions are sampled
     # returns normal actions, unmasked, when not training
-    # if not self._training:
-    #   return actions, policy_state
+    if not self._training:
+      return actions, policy_state
 
     # setup input for sample_action
     ac_mean = actions.mean()

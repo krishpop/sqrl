@@ -124,7 +124,7 @@ if not registered:
             id="SafemrlCube-v{}".format(v_num),
             entry_point=cube_env.SafemrlCubeEnv,
             max_episode_steps=n_steps,
-            kwargs=dict(max_steps=n_steps,same_goals=same_goals, action_history=ac_hist)
+            kwargs=dict(max_steps=n_steps, same_goals=same_goals, action_history=ac_hist)
           )
           v_num += 1
 

@@ -21,13 +21,15 @@ include 'trainer_default.gin'
 # GIN MACROS
 NUM_EVAL = 5
 AGENT_CLASS = 'sqrl'
-LEARNING_RATE = 5e-3
+LEARNING_RATE = 3e-4
+
 
 # TRAINER BINDINGS
 trainer.train_eval.online_critic = True
 trainer.train_eval.n_envs = %NUM_ENVS
 trainer.train_eval.num_eval_episodes = %NUM_EVAL
 trainer.train_eval.lambda_initial = 1.
+trainer.train_eval.lambda_schedule_nsteps = 0
 trainer.train_eval.kstep_fail = 0
 
 
@@ -41,7 +43,8 @@ metrics.AverageEarlyFailureMetric.batch_size = 1
 # AGENT BINDINGS
 safe_sac_agent.SqrlAgent.reward_scale_factor = 1.0
 safe_sac_agent.SqrlAgent.gamma = 0.99
-safe_sac_agent.SqrlAgent.target_update_tau = 0.01
+
+safe_sac_agent.SqrlAgent.target_update_tau = 0.005
 safe_sac_agent.SqrlAgent.target_update_period = 1
 safe_sac_agent.SqrlAgent.safety_pretraining = True
 safe_sac_agent.SqrlAgent.target_safety = 0.1

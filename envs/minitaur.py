@@ -225,7 +225,8 @@ class SafetyGymWrapper(gym.Wrapper):
 
   def step(self, action):
     o, r, d, i = super(SafetyGymWrapper, self).step(action)
-    i.update({'cost': float(self.env.is_fallen()) * self._fall_cost})
+    i.update({'cost': float(self.env.is_fallen()) * self._fall_cost,
+              'score': float(self.env.current_vel)})
     return o, r, d, i
 
 

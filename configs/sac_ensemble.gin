@@ -10,13 +10,17 @@ import safemrl.algos.ensemble_sac_agent
 
 include "sac.gin"
 
-NUM_STEPS = 500000
+NUM_STEPS = 1000000
+INITIAL_NUM_STEPS = 500
 AGENT_CLASS = 'sac_ensemble'
+LEARNING_RATE = 3e-4
 
-trainer.train_eval.n_critics = 30
-trainer.train_eval.max_episode_len = %EP_LEN
+trainer.train_eval.n_critics = 10
 
 ensemble_sac_agent.EnsembleSacAgent.target_update_tau = 0.005
+ensemble_sac_agent.EnsembleSacAgent.gradient_clipping = 2.
+ensemble_sac_agent.EnsembleSacAgent.percentile = 0.3
+
 ensemble_sac_agent.EnsembleSacAgent.actor_optimizer = @ac_opt/tf.keras.optimizers.Adam()
 ac_opt/tf.keras.optimizers.Adam.learning_rate = %LEARNING_RATE
 trainer.train_eval.critic_learning_rate = %LEARNING_RATE

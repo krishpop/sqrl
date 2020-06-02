@@ -38,10 +38,10 @@ def define_flags():
   flags.DEFINE_string('env_str', None, 'Environment string')
   flags.DEFINE_boolean('monitor', False, 'load environments with Monitor wrapper')
   flags.DEFINE_boolean('finetune', False, 'Fine-tuning task safety')
-  flags.DEFINE_boolean('finetune_sc', False, 'Fine-tuning safety critic')
+  flags.DEFINE_boolean('finetune_sc', True, 'Fine-tuning safety critic')
   flags.DEFINE_integer('num_steps', None, 'Number of training steps')
   flags.DEFINE_integer('initial_collect_steps', None, 'Number of steps to collect with random policy')
-  flags.DEFINE_boolean('online', None, 'Whether to train safety critic online')
+  flags.DEFINE_boolean('offline', False, 'Whether to train safety critic online')
   flags.DEFINE_boolean('debug_summaries', False, 'Debug summaries for critic and actor')
   flags.DEFINE_boolean('debug', False, 'Debug logging')
   flags.DEFINE_boolean('eager_debug', False, 'Debug in eager mode if True')
@@ -76,6 +76,7 @@ def define_flags():
   flags.DEFINE_float('target_safety', None, 'Target safety for safety critic')
   ### SAC-ensemble args
   flags.DEFINE_integer('n_critics', None, 'number of critics to use')
+  flags.DEFINE_float('percentile', None, 'ensemble percentile')
 
   # Env args
   ## Minitaur
@@ -86,7 +87,6 @@ def define_flags():
   ## PointMass
   flags.DEFINE_float('action_noise', None, 'Action noise for point-mass environment')
   flags.DEFINE_float('action_scale', None, 'Action scale for point-mass environment')
-  flags.DEFINE_multi_integer('goal', None, 'Goal to move toward')
 
 
 define_flags()
@@ -95,18 +95,22 @@ define_flags()
 def load_prev_run(config):
   api = wandb.Api(overrides=dict(entity='krshna', project='sqrl-neurips'))
   run = api.run(path=FLAGS.load_run)
-  # Make path invariant to which machine training was done on
+  # Find correct load_path, invariant to which machine training was done on
   exp_dir = os.environ.get('EXP_DIR')
-  root_dir = run.config['root_dir'].split('data/')[-1]
+  if 'tfagents' in run.config['root_dir']:
+    root_dir = run.config['root_dir'].split('tfagents/')[-1]
+  elif 'data' in run.config['root_dir']:
+    root_dir = run.config['root_dir'].split('data/')[-1]
   load_path = osp.join(exp_dir, root_dir)
   assert osp.exists(load_path), 'tried to load path the does not exist: {}'.format(load_path)
   op_config = os.path.join(load_path, 'train/operative_config-0.gin')
-  if not wandb.run.resumed or FLAGS.finetune:
+  # if resuming run, adds operative config to config list
+  if wandb.run.resumed and not FLAGS.finetune:
     config.update(dict(gin_files=run.config['gin_files'] + [op_config]), allow_val_change=True)
-  else:
-    gin.parse_config_file(op_config)
-  if config.load_config:
-    config.update({k: run.config[k] for k in run.config if k not in RUN_CONFIG_BLACKLIST}, allow_val_change=True)
+  # if load_config or resuming run, copies rest of loaded run config
+  if config.load_config or wandb.run.resumed:
+    config.update({k: run.config[k] for k in run.config if k not in RUN_CONFIG_BLACKLIST},
+                  allow_val_change=True)
 
 
 def update_root(config):
@@ -130,13 +134,18 @@ def gin_bindings_from_config(config, gin_bindings=[]):
       gin_bindings.append('safe_sac_agent.SqrlAgent.safety_gamma = {}'.format(config.safety_gamma))
     if config.target_safety:
       gin_bindings.append('safe_sac_agent.SqrlAgent.target_safety = {}'.format(config.target_safety))
+    if config.offline:
+      gin_bindings.append('trainer.train_eval.online_critic = False')
   elif agent_class == 'sac':
     agent_prefix = 'sac_agent.SacAgent'
   elif agent_class == 'wcpg':
     agent_prefix = 'wcpg_agent.WcpgAgent'
   elif agent_class == 'sac_ensemble':
-    if not wandb.run.resumed and config.n_critics:
-      gin_bindings.append('trainer.train_eval.n_critics = {}'.format(config.n_critics))
+    if not wandb.run.resumed:
+      if config.n_critics:
+        gin_bindings.append('trainer.train_eval.n_critics = {}'.format(config.n_critics))
+      if config.percentile:
+        gin_bindings.append('ensemble_sac_agent.EnsembleSacAgent.percentile = {}'.format(config.percentile))
     agent_prefix = 'ensemble_sac_agent.EnsembleSacAgent'
 
   # Config value updates
@@ -213,7 +222,7 @@ def gin_bindings_from_config(config, gin_bindings=[]):
     if config.action_scale:
       gin_bindings.append('point_mass.PointMassEnv.action_scale = {}'.format(config.action_scale))
     if config.finetune:
-      gin_bindings.append("point_mass.env_load_fn.goal = {}".format(tuple(config.goal)))
+      gin_bindings.append("point_mass.env_load_fn.goal = (6, 3)")
 
   if config.initial_collect_steps:
     gin_bindings.append("INITIAL_NUM_STEPS = {}".format(config.initial_collect_steps))
@@ -236,9 +245,9 @@ def main(_):
   name = FLAGS.name
   if FLAGS.seed is not None and name:
     name = '-'.join([name, str(FLAGS.seed)])
-  run = wandb.init(name=name, sync_tensorboard=True, entity='krshna', project='sqrl-neurips', config=FLAGS,
-                   monitor_gym=FLAGS.monitor, config_exclude_keys=EXCLUDE_KEYS, notes=FLAGS.notes,
-                   resume=FLAGS.resume_id)
+  run = wandb.init(name=name, sync_tensorboard=True, entity='krshna', project='sqrl-neurips',
+                   config=FLAGS, monitor_gym=FLAGS.monitor, config_exclude_keys=EXCLUDE_KEYS,
+                   notes=FLAGS.notes, resume=FLAGS.resume_id)
 
   logging.set_verbosity(logging.INFO)
   if FLAGS.debug:
@@ -258,9 +267,11 @@ def main(_):
 
   gin_bindings = FLAGS.gin_param or []
 
-  # if not wandb.run.resumed or config.finetune:
-  for gin_file in config.gin_files:
-    gin.parse_config_file(gin_file, [])
+  if not wandb.run.resumed or config.finetune:
+    for gin_file in config.gin_files:
+      if gin_file == 'sac_safe_online.gin':
+        gin_file = 'sqrl.gin'
+      gin.parse_config_file(gin_file, [])
 
   gin_bindings = gin_bindings_from_config(config) + gin_bindings
   gin.parse_config_files_and_bindings([], gin_bindings)
@@ -268,10 +279,10 @@ def main(_):
   if FLAGS.num_threads:
     tf.config.threading.set_inter_op_parallelism_threads(FLAGS.num_threads)
 
-  trainer.train_eval(config.root_dir, load_root_dir=FLAGS.load_dir, batch_size=config.batch_size, seed=FLAGS.seed,
-                     train_metrics_callback=wandb.log, eager_debug=FLAGS.eager_debug,
-                     monitor=FLAGS.monitor, debug_summaries=FLAGS.debug_summaries, pretraining=(not FLAGS.finetune),
-                     finetune_sc=FLAGS.finetune_sc, wandb=True)
+  trainer.train_eval(config.root_dir, load_root_dir=FLAGS.load_dir, batch_size=config.batch_size,
+                     seed=FLAGS.seed, train_metrics_callback=wandb.log, eager_debug=FLAGS.eager_debug,
+                     monitor=FLAGS.monitor, debug_summaries=FLAGS.debug_summaries,
+                     pretraining=(not FLAGS.finetune), finetune_sc=FLAGS.finetune_sc, wandb=True)
 
 
 if __name__ == '__main__':

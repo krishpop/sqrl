@@ -53,6 +53,7 @@ class EnsembleSacAgent(tf_agent.TFAgent):
                debug_summaries=False,
                summarize_grads_and_vars=False,
                train_step_counter=None,
+               percentile=0.3,
                name=None):
     """Creates a SAC Agent.
 
@@ -169,6 +170,7 @@ class EnsembleSacAgent(tf_agent.TFAgent):
     self._summarize_grads_and_vars = summarize_grads_and_vars
     self._update_target = self._get_target_updater(
         tau=self._target_update_tau, period=self._target_update_period)
+    self._percentile = percentile
 
     train_sequence_length = 2 if not critic_networks[0].state_spec else None
 
@@ -392,7 +394,7 @@ class EnsembleSacAgent(tf_agent.TFAgent):
             target_input, next_time_steps.step_type, training=False)
         target_q_values.append(target_q_values1)
 
-      target_q_values = tfp.stats.percentile(target_q_values, 0.3, axis=0)
+      target_q_values = tfp.stats.percentile(target_q_values, self._percentile, axis=0)
       # target_q_values = tf.reduce_min(target_q_values)  # - tf.exp(self._log_alpha) * next_log_pis
 
       td_targets = tf.stop_gradient(
@@ -406,8 +408,8 @@ class EnsembleSacAgent(tf_agent.TFAgent):
         pred_td_targets1, _ = cn(pred_input, time_steps.step_type, training=True)
         pred_td_targets.append(pred_td_targets1)
 
-      critic_loss = tf.reduce_sum([td_errors_loss_fn(td_targets, pred_td_target)
-                                   for pred_td_target in pred_td_targets], axis=0)
+      critic_loss = tf.reduce_mean([td_errors_loss_fn(td_targets, pred_td_target)
+                                   for pred_td_target in pred_td_targets], axis=0) * 2
 
       if weights is not None:
         critic_loss *= weights

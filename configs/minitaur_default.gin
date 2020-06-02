@@ -10,6 +10,7 @@ ENV_LOAD_FN = @suite_pybullet.load
 ENV_STR = "MinitaurGoalVelocityEnv-v0"
 ENV_WRAPPERS = [@minitaur.TaskAgnWrapper, @minitaur.CurrentVelWrapper]
 NUM_STEPS = 500000
+INITIAL_NUM_STEPS = 500
 TRAIN_METRICS = [
     @safemrl.utils.metrics.AverageEarlyFailureMetric(),
     @safemrl.utils.metrics.MinitaurAverageSpeedMetric(),
@@ -29,17 +30,9 @@ ENV_METRIC_FACTORIES = []
 
 minitaur.MinitaurGoalVelocityEnv.max_steps = %EP_LEN
 safemrl.utils.metrics.AverageEarlyFailureMetric.max_episode_len = %EP_LEN
-minitaur.MinitaurGoalVelocityEnv.accurate_motor_model_enabled = True
-minitaur.MinitaurGoalVelocityEnv.never_terminate = False
-minitaur.MinitaurGoalVelocityEnv.history_length = 5
-minitaur.MinitaurGoalVelocityEnv.urdf_version = "rainbow_dash_v0"
-minitaur.MinitaurGoalVelocityEnv.history_include_actions = True
-minitaur.MinitaurGoalVelocityEnv.control_time_step = 0.02
-minitaur.MinitaurGoalVelocityEnv.history_include_states = True
-minitaur.MinitaurGoalVelocityEnv.include_leg_model = True
 
 minitaur.MinitaurGoalVelocityEnv.goal_limit = 0.8
-minitaur.MinitaurGoalVelocityEnv.goal_vel = 0.4
+minitaur.MinitaurGoalVelocityEnv.goal_vel = 0.3
 minitaur.MinitaurGoalVelocityEnv.butterworth = True
 
 actor_distribution_network.ActorDistributionNetwork.preprocessing_combiner = (
@@ -49,3 +42,6 @@ actor_distribution_network.ActorDistributionNetwork.preprocessing_combiner = (
 agents.CriticNetwork.preprocessing_combiner = (
     @misc.extract_obs_merge_w_ac_layer()
 )
+
+safe_sac_agent.SqrlAgent.target_entropy = -16
+ensemble_sac_agent.EnsembleSacAgent.target_entropy = -16

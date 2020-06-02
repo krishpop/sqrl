@@ -201,7 +201,7 @@ def extract_obs_merge_w_ac_layer():
 # HACK: inputs to concatenate have to be in list (not tuple) format
 # see "tensorflow_core/python/keras/layers/merge.py", line 378
 @gin.configurable
-def merge_obs_w_ac_layer():
+def concatenate_lambda_layer():
   def f(layer_input):
     return tf.keras.layers.concatenate(list(layer_input), axis=-1)
   return tf.keras.layers.Lambda(f)

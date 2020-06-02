@@ -1,6 +1,6 @@
-name: threshold_sweep
+name: sqrl_cube_seed
 program: run_experiment.py
-method: bayes
+method: grid
 metric:
   name: AverageScore
   goal: max
@@ -8,22 +8,33 @@ early_terminate:
   type: hyperband
   min_iter: 1000
 parameters:
-#  safety_gamma:
+  safety_gamma:
+    value: 0.8
 #    distribution: q_uniform
 #    min: 0.6
 #    max: 0.9
 #    q: 0.05
-#  target_safety:
+  target_safety:
+    values: [0.075, 0.2]
 #    distribution: q_uniform
 #    min: 0.05
 #    max: 0.2
 #    q: 0.025
-#  target_entropy:
+  target_entropy:
+    value: -6
 #    distribution: categorical
 #    values: [-192, -96, -24, -12, -6]
-  load_run:
-    value: "safemrl-2/oe6c3je4"
+  gradient_clipping:
+    value: 1
+#  load_run:
+#    value: "safemrl-2/s1ienlzl"
   load_dir:
-    value: "~/tfagents/sqrl/cube_rotate/oe6c3je4"
+    value: "~/tfagents/sqrl/cube_rotate/s1ienlzl"
+  gin_files:
+    value: ["sqrl.gin", "cube_default.gin"]
+  root_dir:
+    value: "sqrl/cube_rotate/finetune"
+  finetune:
+    value: True
   seed:
-    values: [0, 1, 2, 3]
+    values: [0, 1, 2]

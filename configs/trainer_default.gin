@@ -1,4 +1,5 @@
 include 'default_macros.gin'
+import tf_agents.policies.actor_policy
 
 # TRAINER BINDINGS
 trainer.train_eval.env_name = %ENV_STR
@@ -21,5 +22,5 @@ collect_driver/dynamic_step_driver.DynamicStepDriver.num_steps = 1
 
 # MISC
 agents.normal_projection_net.scale_distribution = True
-agents.normal_projection_net.init_means_output_factor = 0.1
+# agents.normal_projection_net.init_means_output_factor = 0.1
 agents.normal_projection_net.state_dependent_std = True

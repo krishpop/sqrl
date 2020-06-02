@@ -12,17 +12,15 @@ include 'point_mass_default.gin'
 
 EP_LEN = 30
 INITIAL_NUM_STEPS = 500
-NUM_STEPS = 100000
-LEARNING_RATE = 3e-4
+NUM_STEPS = 50000
 
 agents.normal_projection_net.init_means_output_factor = 0.01
 
-# trainer.train_eval.lambda_schedule_nsteps = 10000
-# trainer.train_eval.lambda_initial = 0.
-# trainer.train_eval.lambda_final = 10.
+safe_sac_agent.SqrlAgent.target_update_tau = 0.01
 trainer.train_eval.lambda_initial = 1.
 trainer.train_eval.kstep_fail = 0
 
+# safe_sac_agent.SqrlAgent.target_entropy = -2
 safe_sac_agent.SqrlAgent.gamma = 1.
 safe_sac_agent.SqrlAgent.initial_log_alpha = 0.
 safe_sac_agent.SqrlAgent.safety_gamma = 0.4
@@ -45,4 +43,4 @@ point_mass.TimeLimitBonus.early_term_bonus = 1.
 point_mass.TimeLimitBonus.time_limit_penalty = -30.
 
 # point_mass.env_load_fn.resize_factor = (1, 2)
-# point_mass.env_load_fn.fall_penalty = -5.
+# point_mass.env_load_fn.fall_penalty = -10.

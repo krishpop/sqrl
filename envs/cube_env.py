@@ -6,8 +6,9 @@ import gym
 import tensorflow as tf
 
 from pddm.envs.cube import cube_env
-from tf_agents.specs import array_spec
-from tf_agents.environments.wrappers import PyEnvironmentBaseWrapper
+
+# from tf_agents.specs import array_spec
+# from tf_agents.environments.wrappers import PyEnvironmentBaseWrapper
 
 # rotate 20 deg about y axis (cos(a/2), sin(a/2), 0, 0) (up/down)
 # rotate 20 deg about z axis (cos(a/2), 0, 0, sin(a/2)) (left/right)
@@ -41,7 +42,7 @@ GOAL_TASKS = {
 @gin.configurable
 class SafemrlCubeEnv(cube_env.CubeEnv):
 
-    def __init__(self, same_goals=False, goal_task=('more_left', 'more_right', 'more_up', 'more_down'),
+    def __init__(self, same_goals=False, goal_task=('left', 'right', 'up', 'down'),
                  drop_penalty=-1000., max_steps=100, action_history=7):
       #####################################
       #####################################
@@ -74,6 +75,9 @@ class SafemrlCubeEnv(cube_env.CubeEnv):
     @property
     def last_score(self):
       return self._last_score
+
+    def set_sample_goal_args(self, goal_task=[]):
+      self._goal_options = [GOAL_TASKS[k] for k in goal_task]
 
     def do_reset(self, reset_pose, reset_vel, reset_goal=None):
       obs = super(SafemrlCubeEnv, self).do_reset(reset_pose, reset_vel, reset_goal)
@@ -179,72 +183,86 @@ class CubeTaskAgnWrapper(gym.Wrapper):
     return {'observation': o, 'task_agn_rew': 0.}
 
 
-@gin.configurable
-class ActionHistoryWrapper(PyEnvironmentBaseWrapper):
-  """Adds observation and action history to the environment's observations."""
+# @gin.configurable
+# class ActionHistoryWrapper(PyEnvironmentBaseWrapper):
+#   """Adds observation and action history to the environment's observations."""
+#
+#   def __init__(self, env, history_length=7):
+#     """Initializes a HistoryWrapper.
+#
+#     Args:
+#       env: Environment to wrap.
+#       history_length: Length of the history to attach.
+#       include_actions: Whether actions should be included in the history.
+#     """
+#     super(ActionHistoryWrapper, self).__init__(env)
+#     self._history_length = history_length
+#
+#     self._zero_action = self._zeros_from_spec(env.action_spec())
+#
+#     self._action_history = collections.deque(maxlen=history_length)
+#
+#     self._observation_spec = self._get_observation_spec()
+#
+#   def _get_observation_spec(self):
+#
+#     def _update_shape(spec):
+#       return array_spec.update_spec_shape(spec,
+#                                           (self._history_length,) + spec.shape)
+#
+#     observation_spec = self._env.observation_spec()
+#
+#     action_spec = tf.nest.map_structure(_update_shape,
+#                                         self._env.action_spec())
+#     flattened_shape = sum(np.prod(obs.shape) for obs in self._flatten_nested_observation(
+#       [observation_spec['observation'], action_spec]))
+#     return array_spec.ArraySpec(shape=flattened_shape, dtype=observation_spec.dtype,
+#                                 name='packed_observations')
+#
+#   def observation_spec(self):
+#     return self._observation_spec
+#
+#   def _zeros_from_spec(self, spec):
+#
+#     def _zeros(spec):
+#       return np.zeros(spec.shape, dtype=spec.dtype)
+#
+#     return tf.nest.map_structure(_zeros, spec)
+#
+#   def _add_history(self, time_step, action):
+#     self._action_history.append(action)
+#
+#     observation = {
+#         'observation': time_step.observation,
+#         'action': np.stack(self._action_history)
+#     }
+#
+#     return time_step._replace(observation=observation)
+#
+#   def _reset(self):
+#     self._action_history.extend([self._zero_action] *
+#                                 (self._history_length - 1))
+#
+#     time_step = self._env.reset()
+#     return self._add_history(time_step, self._zero_action)
+#
+#   def _step(self, action):
+#     if self.current_time_step() is None or self.current_time_step().is_last():
+#       return self._reset()
+#
+#     time_step = self._env.step(action)
+#     return self._add_history(time_step, action)
 
-  def __init__(self, env, history_length=7):
-    """Initializes a HistoryWrapper.
 
-    Args:
-      env: Environment to wrap.
-      history_length: Length of the history to attach.
-      include_actions: Whether actions should be included in the history.
-    """
-    super(ActionHistoryWrapper, self).__init__(env)
-    self._history_length = history_length
+class SafetyGymWrapper(gym.Wrapper):
+  def __init__(self, env, fall_cost=1.):
+    super(SafetyGymWrapper, self).__init__(env)
+    self._fall_cost = fall_cost
 
-    self._zero_action = self._zeros_from_spec(env.action_spec())
-
-    self._action_history = collections.deque(maxlen=history_length)
-
-    self._observation_spec = self._get_observation_spec()
-
-  def _get_observation_spec(self):
-
-    def _update_shape(spec):
-      return array_spec.update_spec_shape(spec,
-                                          (self._history_length,) + spec.shape)
-
-    observation_spec = self._env.observation_spec()
-
-    action_spec = tf.nest.map_structure(_update_shape,
-                                        self._env.action_spec())
-    flattened_shape = sum(np.prod(obs.shape) for obs in self._flatten_nested_observation(
-      [observation_spec['observation'], action_spec]))
-    return array_spec.ArraySpec(shape=flattened_shape, dtype=observation_spec.dtype,
-                                name='packed_observations')
-
-  def observation_spec(self):
-    return self._observation_spec
-
-  def _zeros_from_spec(self, spec):
-
-    def _zeros(spec):
-      return np.zeros(spec.shape, dtype=spec.dtype)
-
-    return tf.nest.map_structure(_zeros, spec)
-
-  def _add_history(self, time_step, action):
-    self._action_history.append(action)
-
-    observation = {
-        'observation': time_step.observation,
-        'action': np.stack(self._action_history)
-    }
-
-    return time_step._replace(observation=observation)
-
-  def _reset(self):
-    self._action_history.extend([self._zero_action] *
-                                (self._history_length - 1))
-
-    time_step = self._env.reset()
-    return self._add_history(time_step, self._zero_action)
-
-  def _step(self, action):
-    if self.current_time_step() is None or self.current_time_step().is_last():
-      return self._reset()
-
-    time_step = self._env.step(action)
-    return self._add_history(time_step, action)
+  def step(self, action):
+    o, r, d, i = super(SafetyGymWrapper, self).step(action)
+    if d and self.env.reward_dict.get('drop_penalty', 0) != 0:
+      i.update({'cost': self._fall_cost})
+    else:
+      i.update({'cost': 0})
+    return o, r, d, i

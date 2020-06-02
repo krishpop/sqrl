@@ -81,6 +81,7 @@ class SqrlAgent(sac_agent.SacAgent):
                reward_scale_factor=1.0,
                initial_log_alpha=0.0,
                initial_log_lambda=0.0,
+               log_lambda=True,
                target_entropy=None,
                target_safety=0.1,
                gradient_clipping=None,
@@ -89,6 +90,7 @@ class SqrlAgent(sac_agent.SacAgent):
                train_step_counter=None,
                safety_pretraining=True,
                resample_counter=None,
+               sc_metrics=None,
                name="SqrlAgent"):
     self._safety_critic_network = safety_critic_network
     self._train_critic_online = train_critic_online
@@ -113,8 +115,9 @@ class SqrlAgent(sac_agent.SacAgent):
       self._safety_critic_network = common.maybe_copy_target_network_with_checks(
         critic_network, None, 'SafetyCriticNetwork')
 
-    self._log_lambda = common.create_variable(
-        'initial_log_lambda',
+    lambda_name = 'initial_log_lambda' if log_lambda else 'initial_lambda'
+    self._lambda_var = common.create_variable(
+        lambda_name,
         initial_value=initial_log_lambda,
         dtype=tf.float32,
         trainable=True)
@@ -127,23 +130,28 @@ class SqrlAgent(sac_agent.SacAgent):
         safety_threshold=self._target_safety,
         resample_counter=resample_counter,
         training=True)
-    if not safety_pretraining:
-      # change collect_policy from standard to safety-constrained policy
-      self._collect_policy = agents.SafeActorPolicyRSVar(
-          time_step_spec=time_step_spec,
-          action_spec=action_spec,
-          actor_network=self._actor_network,
-          safety_critic_network=self._safety_critic_network,
-          safety_threshold=self._target_safety,
-          resample_counter=resample_counter,
-          training=False)
+    self._collect_policy = agents.SafeActorPolicyRSVar(
+        time_step_spec=time_step_spec,
+        action_spec=action_spec,
+        actor_network=self._actor_network,
+        safety_critic_network=self._safety_critic_network,
+        safety_threshold=self._target_safety,
+        resample_counter=resample_counter,
+        training=False)
 
     self._safety_critic_optimizer = safety_critic_optimizer
     self._lambda_optimizer = lambda_optimizer or alpha_optimizer
     if lambda_scheduler is None:
       self._lambda_scheduler = lambda_scheduler
     else:
-      self._lambda_scheduler = lambda_scheduler(self._log_lambda)
+      self._lambda_scheduler = lambda_scheduler(self._lambda_var)
+    self._metrics = []
+    if sc_metrics:
+      for metric in sc_metrics:
+        if isinstance(metric, (tf.keras.metrics.AUC, tf.keras.metrics.BinaryAccuracy)):
+          self._metrics.append(metric)
+        else:
+          self._metrics.append(metric(self._target_safety))
     self._safety_pretraining = safety_pretraining
     self._safe_td_errors_loss_fn = safe_td_errors_loss_fn
     self._safety_gamma = safety_gamma or self._gamma
@@ -217,7 +225,7 @@ class SqrlAgent(sac_agent.SacAgent):
       self._apply_gradients(safety_critic_grads, trainable_safety_variables,
                             self._safety_critic_optimizer)
 
-    lambda_variable = [self._log_lambda]
+    lambda_variable = [self._lambda_var]
 
     with tf.GradientTape(watch_accessed_variables=False) as tape:
       assert lambda_variable, 'No lambda to optimize'
@@ -233,7 +241,7 @@ class SqrlAgent(sac_agent.SacAgent):
         self._apply_gradients(lambda_grads, lambda_variable, self._lambda_optimizer)
     else:
       self._lambda_scheduler()
-    with tf.name_scope('Train_Sc_Losses'):
+    with tf.name_scope('Train_SC_Losses'):
       tf.compat.v2.summary.scalar(
           name='lambda_loss', data=lambda_loss, step=self.train_step_counter)
       tf.compat.v2.summary.scalar(
@@ -449,6 +457,7 @@ class SqrlAgent(sac_agent.SacAgent):
       # Take the mean across the batch.
       safety_critic_loss = tf.reduce_mean(input_tensor=safety_critic_loss)
 
+      metrics = self._metrics or metrics
       if metrics:
         for metric in metrics:
           if isinstance(metric, tf.keras.metrics.AUC):
@@ -573,9 +582,13 @@ class SqrlAgent(sac_agent.SacAgent):
         # actor_loss = (
         #         tf.exp(self._log_alpha) * log_pi * q_safe - target_q_values +
         #         tf.exp(self._log_lambda) * (q_safe - self._target_safety))
-        actor_loss = (
-                tf.exp(self._log_alpha) * log_pi - target_q_values +
-                tf.exp(self._log_lambda) * (q_safe - self._target_safety))
+        if self._lambda_var.name is 'initial_log_lambda':
+          lam = tf.exp(self._lambda_var)
+        else:
+          lam = self._lambda_var
+
+        actor_loss = (tf.exp(self._log_alpha) * log_pi - target_q_values +
+                      tf.stop_gradient(lam * (q_safe - self._target_safety)))
       else:
         actor_loss = tf.exp(self._log_alpha) * log_pi - target_q_values
       if weights is not None:
@@ -595,8 +608,8 @@ class SqrlAgent(sac_agent.SacAgent):
           step=self.train_step_counter)
         common.generate_tensor_summaries('target_q_values', target_q_values,
                                          self.train_step_counter)
-        if not self._safety_pretraining:
-          common.generate_tensor_summaries('q_safe', q_safe, self.train_step_counter)
+        # if not self._safety_pretraining:
+        common.generate_tensor_summaries('q_safe', q_safe, self.train_step_counter)
         batch_size = nest_utils.get_outer_shape(time_steps,
                                                 self._time_step_spec)[0]
         policy_state = self.policy.get_initial_state(batch_size)
@@ -642,7 +655,7 @@ class SqrlAgent(sac_agent.SacAgent):
     q_safe = tf.nn.sigmoid(q_val)
 
     lambda_loss = (
-        self._log_lambda * tf.stop_gradient(q_safe - self._target_safety))
+        self._lambda_var * tf.stop_gradient(q_safe - self._target_safety))
 
     if weights is not None:
       lambda_loss *= weights
@@ -653,7 +666,7 @@ class SqrlAgent(sac_agent.SacAgent):
       tf.compat.v2.summary.scalar(
         name='lambda_loss', data=lambda_loss, step=self.train_step_counter)
       tf.compat.v2.summary.scalar(
-        name='log_lambda', data=self._log_lambda, step=self.train_step_counter)
+        name='lambda', data=self._lambda_var, step=self.train_step_counter)
 
       return lambda_loss
 

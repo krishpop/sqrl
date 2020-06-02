@@ -8,10 +8,10 @@ import tf_agents.networks.actor_distribution_network
 
 ENV_STR = 'DrunkSpiderShort'
 ENV_LOAD_FN= @point_mass.env_load_fn
-EP_LEN = 50
+EP_LEN = 30
 ENV_WRAPPERS = []
-NUM_STEPS = 100000
-
+NUM_STEPS = 50000
+INITIAL_NUM_STEPS = 1000
 TRAIN_METRICS = [
     @metrics.AverageSuccessMetric(),
     @metrics.AverageFallenMetric(),

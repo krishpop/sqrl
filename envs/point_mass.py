@@ -27,6 +27,7 @@ from __future__ import print_function
 import gin
 import gym
 import numpy as np
+import matplotlib.pyplot as plt
 try:
   from tf_agents.environments import wrappers
   from tf_agents.trajectories import time_step as ts
