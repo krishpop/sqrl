@@ -409,11 +409,14 @@ def train_eval(
     else:
       train_checkpointer.initialize_or_restore()
       rb_checkpointer.initialize_or_restore()
+    if not load_root_dir and len(os.listdir(train_dir)) > 2:
+      train_checkpointer.initialize_or_restore()
 
       if agent_class in SAFETY_AGENTS:
         # should be loaded automatically with agent
         safety_critic_checkpointer.initialize_or_restore()
-        online_rb_checkpointer.initialize_or_restore()
+        if online_critic:
+          online_rb_checkpointer.initialize_or_restore()
 
       # TODO: REMOVE THIS, HARDCODED
       if not pretraining:
@@ -713,7 +716,7 @@ def train_eval(
           safety_critic_checkpointer.save(global_step=global_step_val)
 
       if rb_checkpoint_interval and global_step_val % rb_checkpoint_interval == 0:
-        if agent_class in SAFETY_AGENTS:
+        if agent_class in SAFETY_AGENTS and online_critic:
           online_rb_checkpointer.save(global_step=global_step_val)
         rb_checkpointer.save(global_step=global_step_val)
 
