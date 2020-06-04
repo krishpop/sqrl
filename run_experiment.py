@@ -75,7 +75,7 @@ def define_flags():
   flags.DEFINE_float('safety_gamma', None, 'Safety discount term used for TD backups')
   flags.DEFINE_float('target_safety', None, 'Target safety for safety critic')
   ### SAC-ensemble args
-  flags.DEFINE_integer('n_critics', None, 'number of critics to use')
+  flags.DEFINE_integer('num_critics', None, 'number of critics to use')
   flags.DEFINE_float('percentile', None, 'ensemble percentile')
 
   # Env args
@@ -142,8 +142,8 @@ def gin_bindings_from_config(config, gin_bindings=[]):
     agent_prefix = 'wcpg_agent.WcpgAgent'
   elif agent_class == 'sac_ensemble':
     if not wandb.run.resumed:
-      if config.n_critics:
-        gin_bindings.append('trainer.train_eval.n_critics = {}'.format(config.n_critics))
+      if config.num_critics:
+        gin_bindings.append('trainer.train_eval.num_critics = {}'.format(config.num_critics))
       if config.percentile:
         gin_bindings.append('ensemble_sac_agent.EnsembleSacAgent.percentile = {}'.format(config.percentile))
     agent_prefix = 'ensemble_sac_agent.EnsembleSacAgent'

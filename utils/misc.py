@@ -48,6 +48,18 @@ AGENT_CLASS_BINDINGS = {
   'sac-ensemble': 'ensemble_sac_agent.EnsembleSacAgent'
 }
 
+def load_safety_critic_ckpt(ckpt_dir, safety_critic_net, ckpt_step=None):
+  safety_critic_checkpointer = common.Checkpointer(
+    ckpt_dir=ckpt_dir,
+    safety_critic=safety_critic_net)
+  if ckpt_step is None:
+    safety_critic_checkpointer.initialize_or_restore().assert_existing_objects_matched()
+  else:
+    safety_critic_checkpointer._checkpoint.restore(  # pylint: disable=protected-access
+        osp.join(ckpt_dir, 'ckpt-{}'.format(ckpt_step)))
+    safety_critic_checkpointer._load_status.assert_existing_objects_matched()  # pylint: disable=protected-access
+  return safety_critic_net
+
 
 def load_rb_ckpt(ckpt_dir, replay_buffer, ckpt_step=None):
   rb_checkpointer = common.Checkpointer(

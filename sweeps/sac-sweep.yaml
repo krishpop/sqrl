@@ -1,4 +1,4 @@
-name: sac_sweep_seed
+name: sac_cube
 program: run_experiment.py
 method: grid
 metric:
@@ -9,18 +9,14 @@ parameters:
     distribution: categorical
     values: [0, 1, 2, 3, 4]
   lr:
-    value: 3e-3
-  layer_size:
-    value: 64
-  target_entropy:
-    value: -2 # [-16, -32]  # LOW ENTROPY BONUS IN OBJECTIVE
+    value: 3e-4
   num_steps:
-    value: 50000
+    value: 1000000
   initial_collect_steps:
-    value: 500
+    value: 1000
   gin_files:
-    value: ["sac_point_mass.gin"]
+    value: ["sac.gin", "cube_default.gin"]
   finetune:
     value: False
   root_dir:
-    value: "sac/point_mass_shaped/pretrain"
+    value: "sac/cube_rotate/pretrain"

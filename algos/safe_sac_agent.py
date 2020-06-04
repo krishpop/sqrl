@@ -137,7 +137,7 @@ class SqrlAgent(sac_agent.SacAgent):
         safety_critic_network=self._safety_critic_network,
         safety_threshold=self._target_safety,
         resample_counter=resample_counter,
-        training=False)
+        training=(not safety_pretraining))
 
     self._safety_critic_optimizer = safety_critic_optimizer
     self._lambda_optimizer = lambda_optimizer or alpha_optimizer
@@ -400,8 +400,8 @@ class SqrlAgent(sac_agent.SacAgent):
     policy_state = self.collect_policy.get_initial_state(batch_size)
     action_distribution = self.collect_policy.distribution(
       time_steps, policy_state=policy_state).action
-    actions = tf.nest.map_structure(lambda d: d.sample(), action_distribution)
     # Sample actions and log_pis from transformed distribution.
+    actions = tf.nest.map_structure(lambda d: d.sample(), action_distribution)
     log_pi = common.log_probability(action_distribution, actions,
                                     self.action_spec)
 
@@ -574,7 +574,7 @@ class SqrlAgent(sac_agent.SacAgent):
       target_input_2 = (time_steps.observation, actions)
       target_q_values2, _ = self._critic_network_2(target_input_2, time_steps.step_type, training=False)
       target_q_values = tf.minimum(target_q_values1, target_q_values2)
-      if not self._safety_pretraining:  # adds actor safety loss to actor_loss
+      if self._safety_pretraining:  # adds actor safety loss to actor_loss
         pred_input = (time_steps.observation, actions)
         q_val, _ = self._safety_critic_network(pred_input, time_steps.step_type)
         q_safe = tf.nn.sigmoid(q_val)
@@ -608,8 +608,8 @@ class SqrlAgent(sac_agent.SacAgent):
           step=self.train_step_counter)
         common.generate_tensor_summaries('target_q_values', target_q_values,
                                          self.train_step_counter)
-        # if not self._safety_pretraining:
-        common.generate_tensor_summaries('q_safe', q_safe, self.train_step_counter)
+        if not self._safety_pretraining:
+          common.generate_tensor_summaries('q_safe', q_safe, self.train_step_counter)
         batch_size = nest_utils.get_outer_shape(time_steps,
                                                 self._time_step_spec)[0]
         policy_state = self.policy.get_initial_state(batch_size)

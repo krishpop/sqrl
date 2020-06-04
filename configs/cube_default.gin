@@ -17,7 +17,8 @@ TRAIN_METRICS = [@metrics.AverageEarlyFailureMetric(),
                  @metrics.TotalFallenMetric()]
 EVAL_METRICS = [@metrics.AverageEarlyFailureMetric()]
 ENV_METRIC_FACTORIES = [@metrics.CubeAverageScoreMetric]
-NUM_STEPS = 1500000
+INITIAL_NUM_STEPS = 1000
+NUM_STEPS = 1000000
 
 metrics.AverageEarlyFailureMetric.max_episode_len = %EP_LEN
 metrics.AverageEarlyFailureMetric.buffer_size = 30

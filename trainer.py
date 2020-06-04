@@ -106,7 +106,7 @@ def train_eval(
     lambda_final=1.,
     kstep_fail=4,
     # Ensemble Critic training args
-    n_critics=30,
+    num_critics=None,
     critic_learning_rate=3e-4,
     # Wcpg Critic args
     critic_preprocessing_layer_size=256,
@@ -289,7 +289,7 @@ def train_eval(
       sc_metrics = tf_agent._metrics
     elif agent_class is ensemble_sac_agent.EnsembleSacAgent:
       critic_nets, critic_optimizers = [critic_net], [tf.keras.optimizers.Adam(critic_learning_rate)]
-      for _ in range(n_critics-1):
+      for _ in range(num_critics - 1):
         critic_nets.append(agents.CriticNetwork((observation_spec, action_spec),
                                                 joint_fc_layer_params=critic_joint_fc_layers))
         critic_optimizers.append(tf.keras.optimizers.Adam(critic_learning_rate))
@@ -329,7 +329,7 @@ def train_eval(
     agent_observers = [replay_buffer.add_batch]
     if agent_class in SAFETY_AGENTS:  # online_critic:
       failure_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
-          collect_data_spec, batch_size=1, max_length=500,
+          collect_data_spec, batch_size=1, max_length=2500,
           dataset_window_shift=1)
       # if not online_critic:
       #   agent_observers.append(failure_buffer.add_batch)  # collect policy only adds to online_rb
@@ -351,7 +351,7 @@ def train_eval(
       collect_policy = tf_agent.collect_policy
     else:
       eval_policy = tf_agent.collect_policy if pretraining else tf_agent._safe_policy
-      collect_policy = tf_agent.collect_policy # if pretraining else tf_agent._safe_policy
+      collect_policy = tf_agent.collect_policy if pretraining else tf_agent._safe_policy
       online_collect_policy = tf_agent._safe_policy  # if pretraining else tf_agent.collect_policy
       if pretraining:
         online_collect_policy._training = False
@@ -396,13 +396,24 @@ def train_eval(
       load_root_dir = os.path.expanduser(load_root_dir)
       load_train_dir = os.path.join(load_root_dir, 'train')
       misc.load_agent_ckpt(load_train_dir, tf_agent)
-      # if len(os.listdir(os.path.join(load_train_dir, 'replay_buffer'))) > 1:
-      #   load_rb_ckpt_dir = os.path.join(load_train_dir, 'replay_buffer')
-      #   misc.load_rb_ckpt(load_rb_ckpt_dir, replay_buffer)
+      if len(os.listdir(os.path.join(load_train_dir, 'replay_buffer'))) > 1:
+        load_rb_ckpt_dir = os.path.join(load_train_dir, 'replay_buffer')
+        misc.load_rb_ckpt(load_rb_ckpt_dir, replay_buffer)
       if online_critic:
+        online_load_sc_ckpt_dir = os.path.join(load_root_dir, 'sc')
         online_load_rb_ckpt_dir = os.path.join(load_train_dir, 'online_replay_buffer')
         if osp.exists(online_load_rb_ckpt_dir):
           misc.load_rb_ckpt(online_load_rb_ckpt_dir, failure_buffer)
+        if osp.exists(online_load_sc_ckpt_dir):
+          misc.load_safety_critic_ckpt(online_load_sc_ckpt_dir, safety_critic_net)
+    else:
+      train_checkpointer.initialize_or_restore()
+      rb_checkpointer.initialize_or_restore()
+
+      if agent_class in SAFETY_AGENTS:
+        # should be loaded automatically with agent
+        safety_critic_checkpointer.initialize_or_restore()
+        online_rb_checkpointer.initialize_or_restore()
 
       # TODO: REMOVE THIS, HARDCODED
       if not pretraining:
@@ -418,22 +429,12 @@ def train_eval(
           tf_agent._critic_optimizer = tf.keras.optimizers.Adam(learning_rate=sac_lr)
           tf_agent._actor_optimizer = tf.keras.optimizers.Adam(learning_rate=sac_lr)
 
-    if load_root_dir is None:
-      train_checkpointer.initialize_or_restore()
-      rb_checkpointer.initialize_or_restore()
-
-    if agent_class in SAFETY_AGENTS:
-      safety_critic_checkpointer.initialize_or_restore()
-      online_rb_checkpointer.initialize_or_restore()
-
     env_metrics = []
     if env_metric_factories:
       for env_metric in env_metric_factories:
         env_metrics.append(tf_py_metric.TFPyMetric(env_metric([py_env.gym])))
-        # if run_eval:
-        #   eval_metrics.append(env_metric([env.gym for env in eval_tf_env.pyenv._envs]))
-        # if online_critic:
-        #   sc_metrics.append(env_metric([env.gym for env in sc_tf_env.pyenv._envs]))
+        if run_eval:
+          eval_metrics.append(env_metric([env.gym for env in eval_tf_env.pyenv._envs]))
 
     collect_driver = collect_driver_class(
         tf_env, collect_policy, observers=agent_observers + train_metrics + env_metrics)
@@ -463,7 +464,7 @@ def train_eval(
     # if agent_class not in SAFETY_AGENTS:
     collect_driver.run = common.function_in_tf1()(collect_driver.run)
 
-    if not rb_checkpointer.checkpoint_exists:  # and load_rb_ckpt_dir is None: # and pretraining:
+    if global_step == 0:  # and load_rb_ckpt_dir is None: # and pretraining:
       logging.info('Performing initial collection ...')
       init_collect_observers = agent_observers + train_metrics + env_metrics
       if agent_class in SAFETY_AGENTS:
@@ -748,17 +749,6 @@ def train_eval(
           else:
             eval_metric.tf_summaries(
               train_step=global_step, step_metrics=eval_metrics[:2])
-
-        if env_metrics:
-          eval_results = []
-          for env_metric in env_metrics:
-            env_metric.tf_summaries(
-              train_step=global_step, step_metrics=eval_metrics[:2])
-            eval_results.append(('Eval {}'.format(env_metric.name),
-                                 env_metric.result().numpy()))
-          if train_metrics_callback:
-            train_metrics_callback(collections.OrderedDict(eval_results),
-                                   step=global_step.numpy())
 
       if monitor and global_step_val % monitor_interval == 0:
         monitor_time_step = monitor_py_env.reset()

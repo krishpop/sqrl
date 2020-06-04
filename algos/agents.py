@@ -260,7 +260,7 @@ class CriticNetwork(network.Network):
         1,
         activation=None,
         kernel_initializer=tf.keras.initializers.RandomUniform(-0.003, 0.003),
-        bias_initializer=tf.keras.initializers.RandomUniform(-10, -9),
+        bias_initializer=tf.keras.initializers.RandomUniform(-1, 0),
         name='value')
 
   def call(self, observations, step_type, network_state=(), training=False, mask=None):
@@ -569,7 +569,7 @@ class GaussianNoisePolicy(tf_policy.Base):
 
 
 def resample_cond(scale, safe_ac_mask, *_):
-  return tf.reduce_any(tf.cast(safe_ac_mask, tf.bool))
+  return tf.logical_not(tf.reduce_any(tf.cast(safe_ac_mask, tf.bool)))
 
 
 @gin.configurable
@@ -704,7 +704,7 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
                                                 training=self._training)
     # EDIT 5/18 - training now determines whether safe/unsafe actions are sampled
     # returns normal actions, unmasked, when not training
-    if not self._training:
+    if not self._training or has_batch_dim:
       return actions, policy_state
 
     # setup input for sample_action
