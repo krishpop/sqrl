@@ -69,6 +69,7 @@ class SqrlAgent(sac_agent.SacAgent):
                train_critic_online=True,
                actor_policy_ctor=actor_policy.ActorPolicy,
                safety_critic_network=None,
+               target_safety_critic_network=None,
                critic_network_2=None,
                target_critic_network=None,
                target_critic_network_2=None,
@@ -115,6 +116,12 @@ class SqrlAgent(sac_agent.SacAgent):
       self._safety_critic_network = common.maybe_copy_target_network_with_checks(
         critic_network, None, 'SafetyCriticNetwork')
 
+    if target_safety_critic_network is not None:
+      self._target_safety_critic_network.create_variables()
+    else:
+      self._target_safety_critic_network = common.maybe_copy_target_network_with_checks(
+        self._safety_critic_network, None, 'TargetSafetyCriticNetwork')
+
     lambda_name = 'initial_log_lambda' if log_lambda else 'initial_lambda'
     self._lambda_var = common.create_variable(
         lambda_name,
@@ -155,6 +162,33 @@ class SqrlAgent(sac_agent.SacAgent):
     self._safety_pretraining = safety_pretraining
     self._safe_td_errors_loss_fn = safe_td_errors_loss_fn
     self._safety_gamma = safety_gamma or self._gamma
+    self._update_target_safety_critic = self._get_target_updater_safety_critic(
+      tau=self._target_update_tau, period=self._target_update_period)
+
+  def _get_target_updater_safety_critic(self, tau=1.0, period=1):
+    """Performs a soft update of the target network parameters.
+
+    For each weight w_s in the original network, and its corresponding
+    weight w_t in the target network, a soft update is:
+    w_t = (1- tau) x w_t + tau x ws
+
+    Args:
+      tau: A float scalar in [0, 1]. Default `tau=1.0` means hard update.
+      period: Step interval at which the target network is updated.
+
+    Returns:
+      A callable that performs a soft update of the target network parameters.
+    """
+    with tf.name_scope('update_target_safety_critic'):
+
+      def update():
+        """Update target network."""
+        critic_update = common.soft_variables_update(
+            self._safety_critic_network.variables,
+            self._target_safety_critic_network.variables, tau)
+        return critic_update
+
+      return common.Periodically(update, period, 'update_target_safety_critic')
 
   def _initialize(self):
     """Returns an op to initialize the agent.
@@ -169,6 +203,10 @@ class SqrlAgent(sac_agent.SacAgent):
         self._critic_network_2.variables,
         self._target_critic_network_2.variables,
         tau=1.0)
+    common.soft_variables_update(
+      self._safety_critic_network.variables,
+      self._target_safety_critic_network.variables,
+      tau=1.0)
 
   def _experience_to_transitions(self, experience):
     boundary_mask = tf.logical_not(experience.is_boundary()[:, 0])
@@ -235,6 +273,9 @@ class SqrlAgent(sac_agent.SacAgent):
           actions,
           safety_rewards=next_time_steps.observation['task_agn_rew'])
     tf.debugging.check_numerics(lambda_loss, 'Lambda loss is inf or nan.')
+    if self._safety_pretraining:
+      # update target safety critic independently of target critic during pretraining...
+      self._update_target_safety_critic()
     if self._lambda_scheduler is None:
       if training:
         lambda_grads = tape.gradient(lambda_loss, lambda_variable)
@@ -389,11 +430,16 @@ class SqrlAgent(sac_agent.SacAgent):
         critic_update_2 = common.soft_variables_update(
             self._critic_network_2.variables,
             self._target_critic_network_2.variables, tau)
-        return tf.group(critic_update_1, critic_update_2)
+        if self._train_critic_online:
+          return tf.group(critic_update_1, critic_update_2)
+        critic_update_3 = common.soft_variables_update(
+            self._safety_critic_network.variables,
+            self._target_safety_critic_network.variables, tau)
+        return tf.group(critic_update_1, critic_update_2, critic_update_3)
 
       return common.Periodically(update, period, 'update_targets')
 
-  def _actions_and_log_probs(self, time_steps):
+  def _actions_and_log_probs(self, time_steps, safety_constrained=False):
     """Get actions and corresponding log probabilities from policy."""
     # Get raw action distribution from policy, and initialize bijectors list.
     batch_size = nest_utils.get_outer_shape(time_steps, self.time_step_spec)[0]
@@ -436,13 +482,13 @@ class SqrlAgent(sac_agent.SacAgent):
       next_actions, next_log_pis = self._actions_and_log_probs(  # pylint: disable=unused-variable
           next_time_steps)
       target_input = (next_time_steps.observation, next_actions)
-      target_q_values, _ = self._safety_critic_network(
+      target_q_values, _ = self._target_safety_critic_network(
           target_input, next_time_steps.step_type)
       target_q_values = tf.nn.sigmoid(target_q_values)
 
       td_targets = tf.stop_gradient(safety_rewards +
                                     (1 - safety_rewards) * gamma *
-                                    next_time_steps.discount * target_q_values)
+                                    next_time_steps.discount * target_q_values * next_log_pis)
 
       pred_input = (time_steps.observation, actions)
       pred_td_targets, _ = self._safety_critic_network(

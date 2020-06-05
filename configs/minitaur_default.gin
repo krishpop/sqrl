@@ -15,6 +15,7 @@ TRAIN_METRICS = [
     @safemrl.utils.metrics.AverageEarlyFailureMetric(),
     @safemrl.utils.metrics.MinitaurAverageSpeedMetric(),
     @safemrl.utils.metrics.MinitaurAverageMaxSpeedMetric(),
+    @safemrl.utils.metrics.TotalFallenMetric()
 ]
 
 # eval_failure/singleton.constructor = @safemrl.utils.metrics.AverageEarlyFailureMetric
@@ -22,7 +23,8 @@ TRAIN_METRICS = [
 EVAL_METRICS = [
     @safemrl.utils.metrics.AverageEarlyFailureMetric(),
     @safemrl.utils.metrics.MinitaurAverageSpeedMetric(),
-    @safemrl.utils.metrics.MinitaurAverageMaxSpeedMetric()
+    @safemrl.utils.metrics.MinitaurAverageMaxSpeedMetric(),
+    @safemrl.utils.metrics.TotalFallenMetric()
 ]
 
 ENV_METRIC_FACTORIES = []

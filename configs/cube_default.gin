@@ -7,8 +7,6 @@ import tf_agents.environments.suite_mujoco
 import tf_agents.environments.suite_gym
 import tf_agents.networks.actor_distribution_network
 
-ACTOR_LR = 4e-4
-CRITIC_LR = 1e-4
 ENV_STR = 'SafemrlCube-v2'
 ENV_LOAD_FN = @suite_mujoco.load
 ENV_WRAPPERS = [@cube_env.CubeTaskAgnWrapper]

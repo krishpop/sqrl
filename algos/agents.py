@@ -54,19 +54,12 @@ tfd = tfp.distributions
 def normal_projection_net(action_spec,
                           init_action_stddev=0.35,
                           init_means_output_factor=0.1,
-                          state_dependent_std=True,
-                          std_bias_initializer_value=0.,
-                          mean_transform=None,
                           scale_distribution=True):
   del init_action_stddev
-  # std_bias_initializer_value = round(np.log(init_action_stddev + 1e-10), 3)
   return normal_projection_network.NormalProjectionNetwork(
       action_spec,
-      state_dependent_std=state_dependent_std,
-      # mean_transform=mean_transform,
+      state_dependent_std=True,
       init_means_output_factor=init_means_output_factor,
-      std_bias_initializer_value=std_bias_initializer_value,
-      # std_transform=std_clip_transform,
       std_transform=sac_agent.std_clip_transform,
       scale_distribution=scale_distribution)
 
@@ -260,7 +253,7 @@ class CriticNetwork(network.Network):
         1,
         activation=None,
         kernel_initializer=tf.keras.initializers.RandomUniform(-0.003, 0.003),
-        bias_initializer=tf.keras.initializers.RandomUniform(-1, 0),
+        bias_initializer=tf.constant_initializer(-1),
         name='value')
 
   def call(self, observations, step_type, network_state=(), training=False, mask=None):

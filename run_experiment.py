@@ -12,7 +12,7 @@ from absl import app
 from absl import logging
 
 # blacklist of config values to update with a loaded run config
-RUN_CONFIG_BLACKLIST = {'safety_gamma', 'target_safety', 'friction', 'drop_penalty',
+RUN_CONFIG_BLACKLIST = {'safety_gamma', 'target_safety', 'friction',
                         'target_entropy', 'root_dir', 'num_steps', 'finetune', 'debug_summaries'}
 
 # keys to exclude from wandb config
@@ -82,8 +82,6 @@ def define_flags():
   ## Minitaur
   flags.DEFINE_float('friction', None, 'Friction for Minitaur environment')
   flags.DEFINE_float('goal_vel', None, 'Goal velocity for Minitaur environment')
-  ## CubeEnv
-  flags.DEFINE_float('drop_penalty', -500., 'Drop penalty for cube environment')
   ## PointMass
   flags.DEFINE_float('action_noise', None, 'Action noise for point-mass environment')
   flags.DEFINE_float('action_scale', None, 'Action scale for point-mass environment')
@@ -212,8 +210,6 @@ def gin_bindings_from_config(config, gin_bindings=[]):
       gin_bindings.append('minitaur.MinitaurGoalVelocityEnv.friction = {}'.format(config.friction))
     if config.goal_vel:
       gin_bindings.append("minitaur.MinitaurGoalVelocityEnv.goal_vel = {}".format(config.goal_vel))
-  elif 'Cube' in env_str and config.drop_penalty:
-    gin_bindings.append('cube_env.SafemrlCubeEnv.drop_penalty = {}'.format(config.drop_penalty))
     if config.finetune:
       gin_bindings.append("cube_env.SafemrlCubeEnv.goal_task = ('more_left', 'more_right', 'more_up', 'more_down')")
   elif 'DrunkSpider' in env_str:
@@ -267,11 +263,10 @@ def main(_):
 
   gin_bindings = FLAGS.gin_param or []
 
-  if not wandb.run.resumed or config.finetune:
-    for gin_file in config.gin_files:
-      if gin_file == 'sac_safe_online.gin':
-        gin_file = 'sqrl.gin'
-      gin.parse_config_file(gin_file, [])
+  for gin_file in config.gin_files:
+    if gin_file == 'sac_safe_online.gin':
+      gin_file = 'sqrl.gin'
+    gin.parse_config_file(gin_file, [])
 
   gin_bindings = gin_bindings_from_config(config) + gin_bindings
   gin.parse_config_files_and_bindings([], gin_bindings)

@@ -15,7 +15,7 @@ INITIAL_NUM_STEPS = 500
 AGENT_CLASS = 'sac_ensemble'
 LEARNING_RATE = 3e-4
 
-trainer.train_eval.n_critics = 10
+trainer.train_eval.num_critics = 10
 
 ensemble_sac_agent.EnsembleSacAgent.target_update_tau = 0.005
 ensemble_sac_agent.EnsembleSacAgent.gradient_clipping = 2.
