@@ -7,7 +7,14 @@ NUM_ENVS = 5
 NUM_EVAL = 5
 LEARNING_RATE = 3e-4
 SLOW_LEARNING_RATE = 1e-5
-NUM_STEPS = 100000
+NUM_STEPS = 1000
+FINETUNE_STEPS = 500
 INITIAL_NUM_STEPS = 50
 
-trainer.train_eval.keep_rb_checkpoint = False
+trainer.train_eval.summary_interval = 100
+trainer.train_eval.log_interval = 100
+trainer.train_eval.train_checkpoint_interval = 500
+trainer.train_eval.policy_checkpoint_interval = 500
+trainer.train_eval.rb_checkpoint_interval = 1000
+trainer.train_eval.keep_rb_checkpoint = True
+trainer.train_eval.debug_summaries = True

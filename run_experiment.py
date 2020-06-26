@@ -13,7 +13,10 @@ from absl import logging
 
 # blacklist of config values to update with a loaded run config
 RUN_CONFIG_BLACKLIST = {'safety_gamma', 'target_safety', 'friction',
-                        'target_entropy', 'root_dir', 'num_steps', 'finetune', 'debug_summaries'}
+                        'goal_vel', 'action_noise', 'action_scale',
+                        'target_entropy', 'root_dir', 'num_steps', 'finetune',
+                        'debug_summaries', 'train_finetune', 'finetune_steps',
+                        'eager_debug', 'debug', 'num_threads'}
 
 # keys to exclude from wandb config
 FLAGS = flags.FLAGS
@@ -39,7 +42,9 @@ def define_flags():
   flags.DEFINE_boolean('monitor', False, 'load environments with Monitor wrapper')
   flags.DEFINE_boolean('finetune', False, 'Fine-tuning task safety')
   flags.DEFINE_boolean('finetune_sc', True, 'Fine-tuning safety critic')
-  flags.DEFINE_integer('num_steps', None, 'Number of training steps')
+  flags.DEFINE_boolean('train_finetune', False, 'Train and immediately finetune')
+  flags.DEFINE_float('finetune_steps', 500000, 'Number of finetuning steps')
+  flags.DEFINE_float('num_steps', None, 'Number of training steps')
   flags.DEFINE_integer('initial_collect_steps', None, 'Number of steps to collect with random policy')
   flags.DEFINE_boolean('offline', False, 'Whether to train safety critic online')
   flags.DEFINE_boolean('debug_summaries', False, 'Debug summaries for critic and actor')
@@ -83,6 +88,7 @@ def define_flags():
   flags.DEFINE_float('friction', None, 'Friction for Minitaur environment')
   flags.DEFINE_float('goal_vel', None, 'Goal velocity for Minitaur environment')
   ## PointMass
+  flags.DEFINE_string('pm_goal', '6,3', 'PointMass goal location, string of comma-separated integers within boundaries of goal range')
   flags.DEFINE_float('action_noise', None, 'Action noise for point-mass environment')
   flags.DEFINE_float('action_scale', None, 'Action scale for point-mass environment')
 
@@ -102,10 +108,10 @@ def load_prev_run(config):
   load_path = osp.join(exp_dir, root_dir)
   assert osp.exists(load_path), 'tried to load path the does not exist: {}'.format(load_path)
   op_config = os.path.join(load_path, 'train/operative_config-0.gin')
-  # if resuming run, adds operative config to config list
+  # if resuming run without finetuning, adds operative config to config list
   if wandb.run.resumed and not FLAGS.finetune:
     config.update(dict(gin_files=run.config['gin_files'] + [op_config]), allow_val_change=True)
-  # if load_config or resuming run, copies rest of loaded run config
+  # copies rest of loaded run config excluding blacklist
   if config.load_config or wandb.run.resumed:
     config.update({k: run.config[k] for k in run.config if k not in RUN_CONFIG_BLACKLIST},
                   allow_val_change=True)
@@ -210,6 +216,37 @@ def gin_bindings_from_config(config, gin_bindings=[]):
       gin_bindings.append('minitaur.MinitaurGoalVelocityEnv.friction = {}'.format(config.friction))
     if config.goal_vel:
       gin_bindings.append("minitaur.MinitaurGoalVelocityEnv.goal_vel = {}".format(config.goal_vel))
+  elif 'Cube' in env_str:
+    if config.finetune:
+      gin_bindings.append("cube_env.SafemrlCubeEnv.goal_task = ('more_left', 'more_right', 'more_up', 'more_down')")
+  elif 'DrunkSpider' in env_str:
+    if config.action_noise:
+      gin_bindings.append('point_mass.PointMassEnv.action_noise = {}'.format(config.action_noise))
+    if config.action_scale:
+      gin_bindings.append('point_mass.PointMassEnv.action_scale = {}'.format(config.action_scale))
+    if config.finetune:
+      gin_bindings.append("point_mass.env_load_fn.goal = ({}})".format(config.pm_goal))
+
+  if config.initial_collect_steps:
+    gin_bindings.append("INITIAL_NUM_STEPS = {}".format(config.initial_collect_steps))
+  if config.env_str:
+    gin_bindings.append('ENV_STR = "{}"'.format(config.env_str))
+  if FLAGS.num_steps:
+    gin_bindings.append('NUM_STEPS = {}'.format(int(FLAGS.num_steps)))
+  if config.layer_size and not wandb.run.resumed:
+    gin_bindings.append('LAYER_SIZE = {}'.format(config.layer_size))
+  return gin_bindings
+
+
+def finetune_gin_bindings(config):
+  gin_bindings = []
+  env_str = config.env_str or gin.query_parameter('%ENV_STR')
+  if 'Minitaur' in env_str:
+    if config.friction:
+      gin_bindings.append('minitaur.MinitaurGoalVelocityEnv.friction = {}'.format(config.friction))
+    if config.goal_vel:
+      gin_bindings.append("minitaur.MinitaurGoalVelocityEnv.goal_vel = {}".format(config.goal_vel))
+  elif 'Cube' in env_str:
     if config.finetune:
       gin_bindings.append("cube_env.SafemrlCubeEnv.goal_task = ('more_left', 'more_right', 'more_up', 'more_down')")
   elif 'DrunkSpider' in env_str:
@@ -219,15 +256,12 @@ def gin_bindings_from_config(config, gin_bindings=[]):
       gin_bindings.append('point_mass.PointMassEnv.action_scale = {}'.format(config.action_scale))
     if config.finetune:
       gin_bindings.append("point_mass.env_load_fn.goal = (6, 3)")
-
-  if config.initial_collect_steps:
-    gin_bindings.append("INITIAL_NUM_STEPS = {}".format(config.initial_collect_steps))
-  if config.env_str:
-    gin_bindings.append('ENV_STR = "{}"'.format(config.env_str))
-  if FLAGS.num_steps:
-    gin_bindings.append('NUM_STEPS = {}'.format(FLAGS.num_steps))
-  if config.layer_size and not wandb.run.resumed:
-    gin_bindings.append('LAYER_SIZE = {}'.format(config.layer_size))
+  # set NUM_STEPS to be previous value + FINETUNE_STEPS
+  ft_steps = gin.query_parameter("%FINETUNE_STEPS")
+  if ft_steps is None:
+    ft_steps = config.finetune_steps
+  num_steps = gin.query_parameter("%NUM_STEPS") + ft_steps
+  gin_bindings.append('NUM_STEPS = {}'.format(num_steps))
   return gin_bindings
 
 
@@ -274,11 +308,27 @@ def main(_):
   if FLAGS.num_threads:
     tf.config.threading.set_inter_op_parallelism_threads(FLAGS.num_threads)
 
-  trainer.train_eval(config.root_dir, load_root_dir=FLAGS.load_dir, batch_size=config.batch_size,
-                     seed=FLAGS.seed, train_metrics_callback=wandb.log, eager_debug=FLAGS.eager_debug,
-                     monitor=FLAGS.monitor, debug_summaries=FLAGS.debug_summaries,
-                     pretraining=(not FLAGS.finetune), finetune_sc=FLAGS.finetune_sc, wandb=True)
+  trainer.train_eval(config.root_dir, load_root_dir=FLAGS.load_dir,
+                     batch_size=config.batch_size,
+                     seed=FLAGS.seed, train_metrics_callback=wandb.log,
+                     eager_debug=FLAGS.eager_debug,
+                     monitor=FLAGS.monitor,
+                     debug_summaries=FLAGS.debug_summaries,
+                     pretraining=(not FLAGS.finetune),
+                     finetune_sc=FLAGS.finetune_sc, wandb=True)
 
+  if config.train_finetune and not config.finetune:
+    with gin.unlock_config():
+      finetune_bindings = finetune_gin_bindings(config)
+      gin.parse_config_files_and_bindings([], finetune_bindings)
+    trainer.train_eval(config.root_dir, load_root_dir=FLAGS.load_dir,
+                       batch_size=config.batch_size,
+                       seed=FLAGS.seed, train_metrics_callback=wandb.log,
+                       eager_debug=FLAGS.eager_debug,
+                       monitor=FLAGS.monitor,
+                       debug_summaries=FLAGS.debug_summaries,
+                       pretraining=False,
+                       finetune_sc=FLAGS.finetune_sc, wandb=True)
 
 if __name__ == '__main__':
   # flags.mark_flag_as_required('name')

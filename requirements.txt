@@ -3,3 +3,4 @@
 tf-estimator-nightly==2.0.0.dev2019101601
 tf-nightly-gpu==1.15.0.dev20190821
 tfp-nightly==0.9.0.dev20191016
+gym>=0.15.0

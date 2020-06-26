@@ -30,7 +30,7 @@ import os.path as osp
 from absl import app
 from absl import flags
 from absl import logging
-from algos import agents
+from algos import agents  # pylint: disable=unused-import
 from algos import safe_sac_agent
 from envs import minitaur  # pylint: disable=unused-import
 from envs import point_mass

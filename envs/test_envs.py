@@ -10,17 +10,17 @@ try:
 except ImportError:
   pass
 
-from gym.wrappers import FlattenObservation
+import safemrl.envs
 import cProfile
 import pstats
 import tensorflow as tf
 tf.compat.v1.enable_v2_behavior()
+from gym.wrappers import FlattenObservation
 from tf_agents.environments import suite_gym
 from tf_agents.environments import wrappers
 from tf_agents.policies import random_py_policy
 from tf_agents.drivers import py_driver
-from tf_agents.utils import common, test_utils
-from safemrl.envs import minitaur, cube_env, highway, safety_gym_envs
+import gin
 
 
 def profile_env(env_str, max_ep_len, n_steps=None, env_wrappers=[]):

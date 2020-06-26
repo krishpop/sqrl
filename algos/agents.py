@@ -644,7 +644,7 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
     sampled_ac = tf.nest.map_structure(ac_batch_squash.unflatten, sampled_ac)
 
     if self._resample_counter is not None:
-      logging.debug('resampled {} times'.format(self._resample_counter.result()))
+      logging.debug('resampled %d times', self._resample_counter.result())
 
     safe_ac_idx = tf.where(safe_ac_mask)
     fail_prob_safe = tf.gather(fail_prob, safe_ac_idx[:, 0])

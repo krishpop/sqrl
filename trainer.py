@@ -74,7 +74,7 @@ ALGOS = {'sac': sac_agent.SacAgent,
 TERMINATE_AFTER_DIVERGED_LOSS_STEPS = 100
 
 
-@gin.configurable(blacklist=['seed', 'eager_debug', 'monitor', 'debug_summaries'])
+@gin.configurable(blacklist=['seed', 'eager_debug', 'monitor'])
 def train_eval(
     root_dir,
     load_root_dir=None,
@@ -151,7 +151,7 @@ def train_eval(
   sc_metrics = eval_metrics or []
 
   updating_sc = online_critic and (not load_root_dir or finetune_sc)
-  logging.debug('updating safety critic: {}'.format(updating_sc))
+  logging.debug('updating safety critic: %s', updating_sc)
 
   if seed:
     tf.compat.v1.set_random_seed(seed)
@@ -234,7 +234,6 @@ def train_eval(
       alpha_spec = tensor_spec.BoundedTensorSpec(shape=(1,), dtype=tf.float32, minimum=0., maximum=1.,
                                                  name='alpha')
       input_tensor_spec = (observation_spec, action_spec, alpha_spec)
-      logging.debug('input_tensor_spec: %s', input_tensor_spec)
       critic_net = agents.DistributionalCriticNetwork(
         input_tensor_spec, preprocessing_layer_size=critic_preprocessing_layer_size,
         joint_fc_layer_params=critic_joint_fc_layers)
@@ -250,7 +249,7 @@ def train_eval(
         joint_fc_layer_params=critic_joint_fc_layers)
 
     if agent_class in SAFETY_AGENTS:
-      logging.debug('making sqrl agent')
+      logging.debug('Making SQRL agent')
       if lambda_schedule_nsteps > 0:
         lambda_update_every_nsteps = num_global_steps // lambda_schedule_nsteps
         step_size = (lambda_final - lambda_initial) / lambda_update_every_nsteps
@@ -302,7 +301,7 @@ def train_eval(
         debug_summaries=debug_summaries
       )
     else:  # agent is either SacAgent or WcpgAgent
-      logging.debug(critic_net.input_tensor_spec)
+      logging.debug('critic input_tensor_spec: %s', critic_net.input_tensor_spec)
       tf_agent = agent_class(
         time_step_spec,
         action_spec,
@@ -419,18 +418,18 @@ def train_eval(
           online_rb_checkpointer.initialize_or_restore()
 
       # TODO: REMOVE THIS, HARDCODED
-      if not pretraining:
-        # reset optimizers
-        lr = 5e-3
-        sac_lr = 3e-4
-        if agent_class in SAFETY_AGENTS:
-          tf_agent._lambda_optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
-          tf_agent._safety_critic_optimizer.learning_rate = lr
-        if agent_class != wcpg_agent.WcpgAgent:
-          tf_agent._alpha_optimizer.learning_rate = lr
-        if agent_class != ensemble_sac_agent.EnsembleSacAgent:
-          tf_agent._critic_optimizer = tf.keras.optimizers.Adam(learning_rate=sac_lr)
-          tf_agent._actor_optimizer = tf.keras.optimizers.Adam(learning_rate=sac_lr)
+      # if not pretraining:
+      #   # reset optimizers
+      #   lr = 5e-3
+      #   sac_lr = 3e-4
+      #   if agent_class in SAFETY_AGENTS:
+      #     tf_agent._lambda_optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
+      #     tf_agent._safety_critic_optimizer.learning_rate = lr
+      #   if agent_class != wcpg_agent.WcpgAgent:
+      #     tf_agent._alpha_optimizer.learning_rate = lr
+      #   if agent_class != ensemble_sac_agent.EnsembleSacAgent:
+      #     tf_agent._critic_optimizer = tf.keras.optimizers.Adam(learning_rate=sac_lr)
+      #     tf_agent._actor_optimizer = tf.keras.optimizers.Adam(learning_rate=sac_lr)
 
     env_metrics = []
     if env_metric_factories:
@@ -540,7 +539,7 @@ def train_eval(
           # weights = None
           # weights = 1 - safe_rew + safe_rew * (tf.reduce_mean(1-safe_rew) / 2 * tf.reduce_mean(safe_rew + 1e-16))
           ret = tf_agent.train_sc(experience, safe_rew, weights=weights, metrics=sc_metrics, training=updating_sc)
-          logging.debug('critic train step: {} sec'.format(time.time() - start_time))
+          logging.debug('critic train step: %4.2f sec', time.time() - start_time)
           return ret
 
     @common.function
@@ -619,7 +618,7 @@ def train_eval(
           collect_policy._alpha = None  # reset WCPG alpha
 
       if current_step % log_interval == 0:
-        logging.debug('policy eval: {} sec'.format(time.time() - start_time))
+        logging.debug('policy eval: %4.2f sec', time.time() - start_time)
 
       # PERFORMS TRAIN STEP ON ALGORITHM (OFF-POLICY)
       for _ in range(train_steps_per_iteration):
@@ -671,7 +670,7 @@ def train_eval(
         loss_divergence_counter += 1
         if loss_divergence_counter > TERMINATE_AFTER_DIVERGED_LOSS_STEPS:
           loss_diverged = True
-          logging.debug('Loss diverged, critic_loss: %s, actor_loss: %s',
+          logging.info('Loss diverged, critic_loss: %s, actor_loss: %s',
                         train_loss.extra.critic_loss, train_loss.extra.actor_loss)
           break
       else:
@@ -683,7 +682,7 @@ def train_eval(
         metric_utils.log_metrics(train_metrics + env_metrics)
         logging.info('step = %d, loss = %f', current_step, total_loss)
         steps_per_sec = (global_step.numpy() - timed_at_step) / time_acc
-        logging.info('%.3f steps/sec', steps_per_sec)
+        logging.info('%4.2f steps/sec', steps_per_sec)
         tf.compat.v2.summary.scalar(
           name='global_steps_per_sec', data=steps_per_sec, step=global_step)
         timed_at_step = global_step.numpy()
@@ -707,15 +706,15 @@ def train_eval(
         train_metrics_callback(collections.OrderedDict(train_results), step=global_step.numpy())
 
       global_step_val = global_step.numpy()
-      if global_step_val % train_checkpoint_interval == 0:
+      if current_step % train_checkpoint_interval == 0:
         train_checkpointer.save(global_step=global_step_val)
 
-      if global_step_val % policy_checkpoint_interval == 0:
+      if current_step % policy_checkpoint_interval == 0:
         policy_checkpointer.save(global_step=global_step_val)
         if agent_class in SAFETY_AGENTS:
           safety_critic_checkpointer.save(global_step=global_step_val)
 
-      if rb_checkpoint_interval and global_step_val % rb_checkpoint_interval == 0:
+      if rb_checkpoint_interval and current_step % rb_checkpoint_interval == 0:
         if agent_class in SAFETY_AGENTS and online_critic:
           online_rb_checkpointer.save(global_step=global_step_val)
         rb_checkpointer.save(global_step=global_step_val)
@@ -723,12 +722,12 @@ def train_eval(
       if online_critic:
         clear_rb()  # clears replay_buffer so collects "online rollouts"
 
-      if wandb and global_step_val % eval_interval == 0 and "Drunk" in env_name:
+      if wandb and current_step % eval_interval == 0 and "Drunk" in env_name:
         misc.record_point_mass_episode(eval_tf_env, eval_policy, global_step_val)
         if online_critic:
           misc.record_point_mass_episode(eval_tf_env, tf_agent._safe_policy, global_step_val, 'safe-trajectory')
 
-      if run_eval and global_step_val % eval_interval == 0:
+      if run_eval and current_step % eval_interval == 0:
         results = metric_utils.eager_compute(
           eval_metrics,
           eval_tf_env,
@@ -753,7 +752,7 @@ def train_eval(
             eval_metric.tf_summaries(
               train_step=global_step, step_metrics=eval_metrics[:2])
 
-      if monitor and global_step_val % monitor_interval == 0:
+      if monitor and current_step % monitor_interval == 0:
         monitor_time_step = monitor_py_env.reset()
         monitor_policy_state = eval_policy.get_initial_state(1)
         ep_len = 0
@@ -763,11 +762,11 @@ def train_eval(
           action, monitor_policy_state = monitor_action.action, monitor_action.state
           monitor_time_step = monitor_py_env.step(action)
           ep_len += 1
-        logging.debug('saved rollout at timestep {}, rollout length: {}, {} sec'.format(
-          global_step_val, ep_len, time.time() - monitor_start))
+        logging.debug('saved rollout at timestep %d, rollout length: %d, %4.2f sec',
+            global_step_val, ep_len, time.time() - monitor_start)
 
-      if global_step_val % log_interval == 0:
-        logging.debug('iteration time: {} sec'.format(time.time() - start_time))
+      if current_step % log_interval == 0:
+        logging.debug('iteration time: %4.2f sec', time.time() - start_time)
 
   if not keep_rb_checkpoint:
     misc.cleanup_checkpoints(rb_ckpt_dir)
