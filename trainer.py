@@ -417,20 +417,6 @@ def train_eval(
         if online_critic:
           online_rb_checkpointer.initialize_or_restore()
 
-      # TODO: REMOVE THIS, HARDCODED
-      # if not pretraining:
-      #   # reset optimizers
-      #   lr = 5e-3
-      #   sac_lr = 3e-4
-      #   if agent_class in SAFETY_AGENTS:
-      #     tf_agent._lambda_optimizer = tf.keras.optimizers.Adam(learning_rate=lr)
-      #     tf_agent._safety_critic_optimizer.learning_rate = lr
-      #   if agent_class != wcpg_agent.WcpgAgent:
-      #     tf_agent._alpha_optimizer.learning_rate = lr
-      #   if agent_class != ensemble_sac_agent.EnsembleSacAgent:
-      #     tf_agent._critic_optimizer = tf.keras.optimizers.Adam(learning_rate=sac_lr)
-      #     tf_agent._actor_optimizer = tf.keras.optimizers.Adam(learning_rate=sac_lr)
-
     env_metrics = []
     if env_metric_factories:
       for env_metric in env_metric_factories:
@@ -443,19 +429,10 @@ def train_eval(
 
     if online_critic:
       logging.debug('online driver class: %s', online_driver_class)
-      if online_driver_class is safe_dynamic_episode_driver.SafeDynamicEpisodeDriver:
-        online_temp_buffer = episodic_replay_buffer.EpisodicReplayBuffer(collect_data_spec)
-        online_temp_buffer_stateful = episodic_replay_buffer.StatefulEpisodicReplayBuffer(
-          online_temp_buffer, num_episodes=num_eval_episodes)
-        online_driver = safe_dynamic_episode_driver.SafeDynamicEpisodeDriver(
-          sc_tf_env, online_collect_policy, online_temp_buffer, failure_buffer,
-          observers=[online_temp_buffer_stateful.add_batch],
-          num_episodes=num_eval_episodes)
-      else:
-        online_driver = online_driver_class(
-          sc_tf_env, online_collect_policy, observers=[failure_buffer.add_batch],
-          num_episodes=num_eval_episodes)
-        online_driver.run = common.function_in_tf1()(online_driver.run)
+      online_driver = online_driver_class(
+        sc_tf_env, online_collect_policy, observers=[failure_buffer.add_batch],
+        num_episodes=num_eval_episodes)
+      online_driver.run = common.function_in_tf1()(online_driver.run)
 
     if eager_debug:
       tf.config.experimental_run_functions_eagerly(True)
@@ -531,14 +508,10 @@ def train_eval(
           assert env_name.split('-')[0] in SAFETY_ENVS, "ENV: {} not in SAFETY_ENVS".format(env_name)
           if env_name.split('-')[0] in SAFETY_ENVS:
             safe_rew = experience.observation['task_agn_rew'][:, 1]
-          # else:
-            # safe_rew = rb_rewards
-            # safe_rew = tf.gather(safe_rew, tf.squeeze(buf_info.ids), axis=1)
           weights = (safe_rew / tf.reduce_mean(safe_rew + 1e-16) +
                      (1 - safe_rew) / (tf.reduce_mean(1 - safe_rew))) / 2
-          # weights = None
-          # weights = 1 - safe_rew + safe_rew * (tf.reduce_mean(1-safe_rew) / 2 * tf.reduce_mean(safe_rew + 1e-16))
-          ret = tf_agent.train_sc(experience, safe_rew, weights=weights, metrics=sc_metrics, training=updating_sc)
+          ret = tf_agent.train_sc(experience, safe_rew, weights=weights,
+                                  metrics=sc_metrics, training=updating_sc)
           logging.debug('critic train step: %4.2f sec', time.time() - start_time)
           return ret
 
