@@ -35,7 +35,7 @@ safemrl.utils.metrics.AverageEarlyFailureMetric.max_episode_len = %EP_LEN
 
 minitaur.MinitaurGoalVelocityEnv.goal_limit = 0.8
 minitaur.MinitaurGoalVelocityEnv.goal_vel = 0.3
-minitaur.MinitaurGoalVelocityEnv.butterworth = True
+minitaur.MinitaurGoalVelocityEnv.butterworth = False # True
 
 actor_distribution_network.ActorDistributionNetwork.preprocessing_combiner = (
     @misc.extract_observation_layer()
@@ -45,5 +45,4 @@ agents.CriticNetwork.preprocessing_combiner = (
     @misc.extract_obs_merge_w_ac_layer()
 )
 
-safe_sac_agent.SqrlAgent.target_entropy = -16
 ensemble_sac_agent.EnsembleSacAgent.target_entropy = -16

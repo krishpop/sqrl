@@ -348,6 +348,8 @@ def train_eval(
     if not online_critic:
       eval_policy = tf_agent.policy
       collect_policy = tf_agent.collect_policy
+      if not pretraining and agent_class in SAFETY_AGENTS:
+        collect_policy = tf_agent._safe_policy
     else:
       eval_policy = tf_agent.collect_policy if pretraining else tf_agent._safe_policy
       collect_policy = tf_agent.collect_policy if pretraining else tf_agent._safe_policy
@@ -529,23 +531,24 @@ def train_eval(
     loss_divergence_counter = 0
     mean_train_loss = tf.keras.metrics.Mean(name='mean_train_loss')
 
-    if online_critic:
-      logging.debug('starting safety critic pretraining')
-      # don't fine-tune safety critic
-      resample_counter = online_collect_policy._resample_counter
+    if agent_class in SAFETY_AGENTS:
+      resample_counter = online_collect_policy._resample_counter if online_critic else collect_policy._resample_counter
       mean_resample_ac = tf.keras.metrics.Mean(name='mean_unsafe_ac_freq')
-      if global_step.numpy() == 0:# or finetune_sc:
-        for _ in range(train_sc_steps):
-          sc_loss, lambda_loss = critic_train_step()  # pylint: disable=unused-variable
-        critic_results = [('sc_loss', sc_loss.numpy()), ('lambda_loss', lambda_loss.numpy())]
-        for critic_metric in sc_metrics:
-          if isinstance(critic_metric, (tf.keras.metrics.AUC, tf.keras.metrics.BinaryAccuracy)):
-            critic_results.append((critic_metric.name, critic_metric.result().numpy()))
-          else:
-            critic_results.append((critic_metric.name, min(critic_metric.result().numpy())))
-          critic_metric.reset_states()
-        if train_metrics_callback:
-          train_metrics_callback(collections.OrderedDict(critic_results), step=global_step.numpy())
+      if online_critic:
+        logging.debug('starting safety critic pretraining')
+        # don't fine-tune safety critic
+        if global_step.numpy() == 0:# or finetune_sc:
+          for _ in range(train_sc_steps):
+            sc_loss, lambda_loss = critic_train_step()  # pylint: disable=unused-variable
+          critic_results = [('sc_loss', sc_loss.numpy()), ('lambda_loss', lambda_loss.numpy())]
+          for critic_metric in sc_metrics:
+            if isinstance(critic_metric, (tf.keras.metrics.AUC, tf.keras.metrics.BinaryAccuracy)):
+              critic_results.append((critic_metric.name, critic_metric.result().numpy()))
+            else:
+              critic_results.append((critic_metric.name, min(critic_metric.result().numpy())))
+            critic_metric.reset_states()
+          if train_metrics_callback:
+            train_metrics_callback(collections.OrderedDict(critic_results), step=global_step.numpy())
 
     curr_ep = []
 

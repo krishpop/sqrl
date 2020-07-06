@@ -58,20 +58,6 @@ from tf_agents.utils import common
 
 
 @gin.configurable
-def normal_projection_net(action_spec,
-                          init_action_stddev=0.35,
-                          init_means_output_factor=0.1):
-  del init_action_stddev
-  return normal_projection_network.NormalProjectionNetwork(
-      action_spec,
-      mean_transform=None,
-      state_dependent_std=True,
-      init_means_output_factor=init_means_output_factor,
-      std_transform=sac_agent.std_clip_transform,
-      scale_distribution=True)
-
-
-@gin.configurable
 def train_eval(
     root_dir,
     env_name='MinitaurGoalVelocityEnv-v0',
@@ -148,8 +134,7 @@ def train_eval(
     actor_net = actor_distribution_network.ActorDistributionNetwork(
         observation_spec,
         action_spec,
-        fc_layer_params=actor_fc_layers,
-        continuous_projection_net=normal_projection_net)
+        fc_layer_params=actor_fc_layers)
     if ensemble:
         critic_nets, critic_optimizers = [], []
         for _ in range(n_critics):

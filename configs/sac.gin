@@ -15,7 +15,7 @@ include 'trainer_default.gin'
 AGENT_CLASS = 'sac'
 
 # AGENT BINDINGS
-sac_agent.SacAgent.target_update_tau = 0.01
+sac_agent.SacAgent.target_update_tau = 0.005
 sac_agent.SacAgent.reward_scale_factor = 1.0
 
 ## AGENT OPTIMIZER BINDINGS

@@ -134,7 +134,7 @@ class SqrlAgent(sac_agent.SacAgent):
         action_spec=action_spec,
         actor_network=self._actor_network,
         safety_critic_network=self._safety_critic_network,
-        safety_threshold=self._target_safety,
+        safety_threshold=target_safety,
         resample_counter=resample_counter,
         training=True)
     self._collect_policy = agents.SafeActorPolicyRSVar(
@@ -142,7 +142,7 @@ class SqrlAgent(sac_agent.SacAgent):
         action_spec=action_spec,
         actor_network=self._actor_network,
         safety_critic_network=self._safety_critic_network,
-        safety_threshold=self._target_safety,
+        safety_threshold=target_safety,
         resample_counter=resample_counter,
         training=(not safety_pretraining))
 

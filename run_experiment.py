@@ -186,7 +186,8 @@ def gin_bindings_from_config(config, gin_bindings=[]):
       gin_bindings.append('{}.reward_scale_factor = {}'.format(agent_prefix, config.reward_scale_factor))
     if config.target_update_tau:
       gin_bindings.append('{}.target_update_tau = {}'.format(agent_prefix, config.target_update_tau))
-    gin_bindings.append('{}.target_update_period = {}'.format(agent_prefix, config.target_update_period))
+    if config.target_update_period:
+      gin_bindings.append('{}.target_update_period = {}'.format(agent_prefix, config.target_update_period))
     if config.gamma:
       gin_bindings.append('{}.gamma = {}'.format(agent_prefix, config.gamma))
     gin_bindings.append('{}.gradient_clipping = {}'.format(agent_prefix, config.gradient_clipping))
