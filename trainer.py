@@ -561,17 +561,20 @@ def train_eval(
       current_step = global_step.numpy()
 
       # MEASURE ACTION RESAMPLING FREQUENCY
-      if online_critic:
-        if pretraining and current_step == num_global_steps // 2:
+      if agent_class in SAFETY_AGENTS:
+        if online_critic and pretraining and current_step == num_global_steps // 2:
           online_collect_policy._training = True
-        mean_resample_ac(resample_counter.result())
-        resample_counter.reset()
-        if time_step is None or time_step.is_last():
-          resample_ac_freq = mean_resample_ac.result()
-          mean_resample_ac.reset_states()
-          with sc_summary_writer.as_default():
-            tf.compat.v2.summary.scalar(
-              name='resample_ac_freq', data=resample_ac_freq, step=global_step)
+        else:
+          collect_policy._training = True
+        if online_critic or collect_policy._training:
+          mean_resample_ac(resample_counter.result())
+          resample_counter.reset()
+          if time_step is None or time_step.is_last():
+            resample_ac_freq = mean_resample_ac.result()
+            mean_resample_ac.reset_states()
+            with sc_summary_writer.as_default():
+              tf.compat.v2.summary.scalar(
+                name='resample_ac_freq', data=resample_ac_freq, step=global_step)
 
       # RUN COLLECTION
       time_step, policy_state = collect_driver.run(
