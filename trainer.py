@@ -510,8 +510,11 @@ def train_eval(
           assert env_name.split('-')[0] in SAFETY_ENVS, "ENV: {} not in SAFETY_ENVS".format(env_name)
           if env_name.split('-')[0] in SAFETY_ENVS:
             safe_rew = experience.observation['task_agn_rew'][:, 1]
-          weights = (safe_rew / tf.reduce_mean(safe_rew + 1e-16) +
-                     (1 - safe_rew) / (tf.reduce_mean(1 - safe_rew))) / 2
+          # weights = (safe_rew * (tf.reduce_sum(safe_rew) - 1) + 1) / (tf.reduce_sum(safe_rew) + 1e16)
+          # weights = (safe_rew / tf.reduce_mean(safe_rew + 1e-16) +
+          #            (1 - safe_rew) / (tf.reduce_mean(1 - safe_rew))) / 2
+          weights = safe_rew * 99 + 1
+          # weights = None
           ret = tf_agent.train_sc(experience, safe_rew, weights=weights,
                                   metrics=sc_metrics, training=updating_sc)
           logging.debug('critic train step: %4.2f sec', time.time() - start_time)
