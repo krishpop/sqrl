@@ -26,10 +26,12 @@ from __future__ import print_function
 
 import json
 import os
+import os.path as osp
 
 from absl import app
 from absl import flags
 from absl import logging
+from datetime import datetime
 import gin
 import tensorflow as tf
 import random
@@ -37,6 +39,7 @@ import numpy as np
 tf.compat.v1.enable_v2_behavior()
 
 from safemrl import trainer
+from safemrl import train_sc
 
 flags.DEFINE_string('root_dir', None,
                     'Root directory for writing logs/summaries/checkpoints.')
@@ -44,6 +47,16 @@ flags.DEFINE_string('load_dir', None,
                     'loading directory for loading checkpoint')
 flags.DEFINE_multi_string('gin_file', None, 'Paths to the study config files.')
 flags.DEFINE_multi_string('gin_param', None, 'Gin binding to pass through.')
+flags.DEFINE_boolean('train_sc', False, 'loads checkpointed buffer and '
+                                             'trains safety critic offline')
+flags.DEFINE_integer('num_steps', 20000, 'number of training steps')
+flags.DEFINE_integer('batch_size', 256, 'batch size per train step')
+flags.DEFINE_float('lr', None, 'safety critic optimizer learning rate')
+flags.DEFINE_float('sc_bias_init_val', None, 'value for safety critic '
+                                            'constant bias initializer')
+flags.DEFINE_float('sc_kernel_scale', None, 'value for safety critic '
+                                            'kernel variance scaling')
+flags.DEFINE_float('fail_weight', None, 'how much to weight failure experience')
 flags.DEFINE_boolean('finetune', False, 'whether or not to finetune')
 flags.DEFINE_boolean('monitor', False, 'whether or not to use monitoring')
 flags.DEFINE_boolean('debug', False, 'set log level to debug if True')
@@ -62,31 +75,55 @@ def gin_to_config(config_str):
     config_dict[key] = gin.config.query_parameter(key)
   return config_dict
 
+
 def main(_):
   logging.set_verbosity(logging.INFO)
   if FLAGS.debug:
     logging.set_verbosity(logging.DEBUG)
   logging.debug('Executing eagerly: %s', tf.executing_eagerly())
+
   if os.environ.get('CONFIG_DIR'):
     gin.add_config_file_search_path(os.environ.get('CONFIG_DIR'))
-  root_dir = FLAGS.root_dir
-  if os.environ.get('EXP_DIR'):
+
+  root_dir = FLAGS.root_dir or FLAGS.load_dir
+  if os.environ.get('EXP_DIR') and not os.path.exists(root_dir):
     root_dir = os.path.join(os.environ.get('EXP_DIR'), root_dir)
 
-  logging.debug('parsing config files: %s', FLAGS.gin_file)
+  gin_files = FLAGS.gin_file or []
+  if FLAGS.train_sc:
+    op_config = osp.join(root_dir, 'train/operative_config-0.gin')
+    if osp.exists(op_config):
+      gin_files.append(op_config)
+  logging.debug('parsing config files: %s', gin_files)
+
+  gin_bindings = FLAGS.gin_param or []
+  if FLAGS.num_steps:
+    gin_bindings.append('NUM_STEPS = {}'.format(FLAGS.num_steps))
+  if FLAGS.lr:
+    gin_bindings.append('SC_LEARNING_RATE = {}'.format(FLAGS.lr))
+  logging.debug('parsing gin bindings: %s', gin_bindings)
+  gin.parse_config_files_and_bindings(gin_files, gin_bindings,
+                                      skip_unknown=True)
+
   if FLAGS.seed:
-    # bindings.append(('trainer.train_eval.seed', FLAGS.seed))
     random.seed(FLAGS.seed)
     np.random.seed(FLAGS.seed)
     tf.compat.v1.set_random_seed(FLAGS.seed)
     logging.debug('Set seed: %d', FLAGS.seed)
-  gin.parse_config_files_and_bindings(FLAGS.gin_file, FLAGS.gin_param, skip_unknown=True)
 
-  trainer.train_eval(root_dir, eager_debug=FLAGS.eager_debug, seed=FLAGS.seed,
-                     pretraining=(not FLAGS.finetune), load_root_dir=FLAGS.load_dir,
-                     monitor=FLAGS.monitor, debug_summaries=FLAGS.debug_summaries)
+  if FLAGS.train_sc:
+    train_sc.train_eval(root_dir,
+                        safety_critic_bias_init_val=FLAGS.sc_bias_init_val,
+                        safety_critic_kernel_scale=FLAGS.sc_kernel_scale,
+                        fail_weight=FLAGS.fail_weight,
+                        seed=FLAGS.seed, monitor=FLAGS.monitor,
+                        debug_summaries=FLAGS.debug_summaries)
+  else:
+    trainer.train_eval(root_dir, load_root_dir=FLAGS.load_dir,
+                       pretraining=(not FLAGS.finetune), monitor=FLAGS.monitor,
+                       eager_debug=FLAGS.eager_debug, seed=FLAGS.seed,
+                       debug_summaries=FLAGS.debug_summaries)
 
 
 if __name__ == '__main__':
-  flags.mark_flag_as_required('root_dir')
   app.run(main)

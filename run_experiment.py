@@ -5,7 +5,6 @@ import gin
 import trainer
 import os
 import os.path as osp
-import numpy as np
 
 from absl import flags
 from absl import app
@@ -128,6 +127,8 @@ def update_root(config):
 
 
 def gin_bindings_from_config(config, gin_bindings=[]):
+  # TODO: turn all configurable gin bindings into macros or REMOVE
+
   gin_bindings = gin_bindings or []
   agent_class = gin.query_parameter('%AGENT_CLASS')
   logging.info("Agent class: {}".format(agent_class))
@@ -135,9 +136,9 @@ def gin_bindings_from_config(config, gin_bindings=[]):
   if agent_class == 'sqrl':
     agent_prefix = 'safe_sac_agent.SqrlAgent'
     if config.safety_gamma:
-      gin_bindings.append('safe_sac_agent.SqrlAgent.safety_gamma = {}'.format(config.safety_gamma))
+      gin_bindings.append('SAFETY_GAMMA = {}'.format(config.safety_gamma))
     if config.target_safety:
-      gin_bindings.append('safe_sac_agent.SqrlAgent.target_safety = {}'.format(config.target_safety))
+      gin_bindings.append('TARGET_SAFETY = {}'.format(config.target_safety))
     if config.offline:
       gin_bindings.append('trainer.train_eval.online_critic = False')
   elif agent_class == 'sac':
@@ -332,6 +333,5 @@ def main(_):
                        finetune_sc=FLAGS.finetune_sc, wandb=True)
 
 if __name__ == '__main__':
-  # flags.mark_flag_as_required('name')
   flags.mark_flag_as_required('root_dir')
   app.run(main)

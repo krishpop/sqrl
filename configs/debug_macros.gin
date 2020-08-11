@@ -1,7 +1,6 @@
 import safemrl.trainer
+import safemrl.train_sc
 import tf_agents.utils.common
-
-include 'networks_tiny.gin'
 
 NUM_ENVS = 5
 NUM_EVAL = 5
@@ -18,3 +17,5 @@ trainer.train_eval.policy_checkpoint_interval = 500
 trainer.train_eval.rb_checkpoint_interval = 1000
 trainer.train_eval.keep_rb_checkpoint = True
 trainer.train_eval.debug_summaries = True
+
+train_sc.train_eval.debug_summaries = True

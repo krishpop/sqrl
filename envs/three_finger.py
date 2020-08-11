@@ -2,12 +2,12 @@ import gin
 import gym
 import numpy as np
 
-from three_finger.envs.raw_controller_env import ThreeFingerRawControlResetSamplingEnv
+from three_finger.envs.raw_controller_env import Gripper2DSamplePoseEnv
 
 
 @gin.configurable
-class ThreeFingerRawEnv(ThreeFingerRawControlResetSamplingEnv):
-  def __init__(self, reset_on_drop=False, max_steps=100, reward_type='contacts'):
+class ThreeFingerRawEnv(Gripper2DSamplePoseEnv):
+  def __init__(self, reset_on_drop=True, max_steps=100, reward_type='contacts'):
     super().__init__(reset_on_drop=reset_on_drop, reward_type=reward_type)
     self.max_episode_steps = max_steps
 

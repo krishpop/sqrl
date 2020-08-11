@@ -218,18 +218,6 @@ class CurrentVelWrapper(gym.Wrapper):
     return o
 
 
-class SafetyGymWrapper(gym.Wrapper):
-  def __init__(self, env, fall_cost=1.):
-    super(SafetyGymWrapper, self).__init__(env)
-    self._fall_cost = fall_cost
-
-  def step(self, action):
-    o, r, d, i = super(SafetyGymWrapper, self).step(action)
-    i.update({'cost': float(self.env.is_fallen()) * self._fall_cost,
-              'score': float(self.env.current_vel)})
-    return o, r, d, i
-
-
 def butter_bandpass_filter(data, lowcut=0.1, highcut=5.0, fs=50, order=1):
   b, a = butter_bandpass(lowcut, highcut, fs, order=order)
   y = lfilter(b, a, data)

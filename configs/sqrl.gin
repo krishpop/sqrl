@@ -12,16 +12,20 @@ import safemrl.utils.metrics
 import safemrl.utils.safe_dynamic_episode_driver
 import safemrl.algos.ensemble_sac_agent
 import safemrl.algos.safe_sac_agent
-import safemrl.envs.minitaur
 import safemrl.algos.agents
 
 include 'networks.gin'
 include 'trainer_default.gin'
+include 'train_sc_default.gin'
 
 # GIN MACROS
 NUM_EVAL = 5
 AGENT_CLASS = 'sqrl'
 LEARNING_RATE = 3e-4
+SC_LEARNING_RATE = 3e-4
+TARGET_SAFETY = 0.1
+SAFETY_GAMMA = 0.7
+FAIL_WEIGHT = 0.75
 
 
 # TRAINER BINDINGS
@@ -31,6 +35,7 @@ trainer.train_eval.num_eval_episodes = %NUM_EVAL
 trainer.train_eval.lambda_initial = 1.
 trainer.train_eval.lambda_schedule_nsteps = 0
 trainer.train_eval.kstep_fail = 0
+trainer.train_eval.target_safety = %TARGET_SAFETY
 
 
 metrics.AverageEarlyFailureMetric.buffer_size = %NUM_EVAL
@@ -47,8 +52,9 @@ safe_sac_agent.SqrlAgent.gamma = 0.99
 safe_sac_agent.SqrlAgent.target_update_tau = 0.005
 safe_sac_agent.SqrlAgent.target_update_period = 1
 safe_sac_agent.SqrlAgent.safety_pretraining = True
-safe_sac_agent.SqrlAgent.target_safety = 0.1
-safe_sac_agent.SqrlAgent.safety_gamma = 0.7
+safe_sac_agent.SqrlAgent.target_safety = %TARGET_SAFETY
+safe_sac_agent.SqrlAgent.safety_gamma = %SAFETY_GAMMA
+safe_sac_agent.SqrlAgent.fail_weight = %FAIL_WEIGHT
 
 ## AGENT OPTIMIZER BINDINGS
 safe_sac_agent.SqrlAgent.actor_optimizer = @ac_opt/tf.keras.optimizers.Adam()
@@ -58,7 +64,7 @@ cr_opt/tf.keras.optimizers.Adam.learning_rate = %CRITIC_LR
 safe_sac_agent.SqrlAgent.alpha_optimizer = @al_opt/tf.keras.optimizers.Adam()
 al_opt/tf.keras.optimizers.Adam.learning_rate = %LEARNING_RATE
 safe_sac_agent.SqrlAgent.safety_critic_optimizer = @sc_opt/tf.keras.optimizers.Adam()
-sc_opt/tf.keras.optimizers.Adam.learning_rate = %LEARNING_RATE
+sc_opt/tf.keras.optimizers.Adam.learning_rate = %SC_LEARNING_RATE
 safe_sac_agent.SqrlAgent.lambda_optimizer = @lam_opt/tf.keras.optimizers.Adam()
 lam_opt/tf.keras.optimizers.Adam.learning_rate = %LEARNING_RATE
 

@@ -66,7 +66,6 @@ class SqrlAgent(sac_agent.SacAgent):
                alpha_optimizer,
                lambda_optimizer=None,
                lambda_scheduler=None,
-               train_critic_online=True,
                actor_policy_ctor=actor_policy.ActorPolicy,
                safety_critic_network=None,
                target_safety_critic_network=None,
@@ -90,8 +89,10 @@ class SqrlAgent(sac_agent.SacAgent):
                summarize_grads_and_vars=False,
                train_step_counter=None,
                safety_pretraining=True,
+               train_critic_online=True,
                resample_counter=None,
                sc_metrics=None,
+               fail_weight=None,
                name="SqrlAgent"):
     self._safety_critic_network = safety_critic_network
     self._train_critic_online = train_critic_online
@@ -117,6 +118,7 @@ class SqrlAgent(sac_agent.SacAgent):
         critic_network, None, 'SafetyCriticNetwork')
 
     if target_safety_critic_network is not None:
+      self._target_safety_critic_network = target_safety_critic_network
       self._target_safety_critic_network.create_variables()
     else:
       self._target_safety_critic_network = common.maybe_copy_target_network_with_checks(
@@ -152,18 +154,16 @@ class SqrlAgent(sac_agent.SacAgent):
       self._lambda_scheduler = lambda_scheduler
     else:
       self._lambda_scheduler = lambda_scheduler(self._lambda_var)
-    self._metrics = []
-    if sc_metrics:
-      for metric in sc_metrics:
-        if isinstance(metric, (tf.keras.metrics.AUC, tf.keras.metrics.BinaryAccuracy)):
-          self._metrics.append(metric)
-        else:
-          self._metrics.append(metric(self._target_safety))
+    self._metrics = sc_metrics
     self._safety_pretraining = safety_pretraining
     self._safe_td_errors_loss_fn = safe_td_errors_loss_fn
     self._safety_gamma = safety_gamma or self._gamma
-    self._update_target_safety_critic = self._get_target_updater_safety_critic(
-      tau=self._target_update_tau, period=self._target_update_period)
+    self._fail_weight = fail_weight
+    if train_critic_online:
+      self._update_target_safety_critic = self._get_target_updater_safety_critic(
+        tau=self._target_update_tau, period=self._target_update_period)
+    else:
+      self._update_target_safety_critic = None
 
   def _get_target_updater_safety_critic(self, tau=1.0, period=1):
     """Performs a soft update of the target network parameters.
@@ -211,18 +211,13 @@ class SqrlAgent(sac_agent.SacAgent):
   def _experience_to_transitions(self, experience):
     boundary_mask = tf.logical_not(experience.is_boundary()[:, 0])
     experience = nest_utils.fast_map_structure(lambda *x: tf.boolean_mask(*x, boundary_mask), experience)
-    transitions = trajectory.to_transition(experience)
-    time_steps, policy_steps, next_time_steps = transitions
-    actions = policy_steps.action
-    if (self.train_sequence_length is not None and
-        self.train_sequence_length == 2):
-      # Sequence empty time dimension if critic network is stateless.
-      time_steps, actions, next_time_steps = tf.nest.map_structure(
-          lambda t: tf.squeeze(t, axis=1),
-          (time_steps, actions, next_time_steps))
-    return time_steps, actions, next_time_steps  #, policy_steps.info
+    squeeze_time_dim = not self._critic_network_1.state_spec
+    time_steps, policy_steps, next_time_steps = (
+        trajectory.experience_to_transitions(experience, squeeze_time_dim))
+    return time_steps, policy_steps.action, next_time_steps  #, policy_steps.info
 
-  def train_sc(self, experience, safe_rew, weights=None, metrics=None, training=True):
+  def train_sc(self, experience, safe_rew, weights=None, metrics=None,
+               training=True):
     """Returns a train op to update the agent's networks.
 
     This method trains with the provided batched experience.
@@ -232,6 +227,8 @@ class SqrlAgent(sac_agent.SacAgent):
       safe_rew: Task-agnostic safety reward.
       weights: Optional scalar or elementwise (per-batch-entry) importance
         weights.
+      metrics: Optional metrics to debug safety critic when computing loss
+      training: Whether or not to apply gradient step to safety critic params
 
     Returns:
       A tuple of (safety_critic_loss, lambda_loss)
@@ -263,26 +260,35 @@ class SqrlAgent(sac_agent.SacAgent):
       self._apply_gradients(safety_critic_grads, trainable_safety_variables,
                             self._safety_critic_optimizer)
 
-    lambda_variable = [self._lambda_var]
+    # update target safety critic independently of target critic during
+    # pretraining if training critic online (i.e. on-policy data)
+    if self._train_critic_online:
+      self._update_target_safety_critic()
 
+    lambda_variable = [self._lambda_var]
+    next_actions, next_log_pis = self._actions_and_log_probs(
+        time_steps, safety_constrained=True)
+
+    # Dual gradient ascent step, updates lagrange multiplier
     with tf.GradientTape(watch_accessed_variables=False) as tape:
       assert lambda_variable, 'No lambda to optimize'
       tape.watch(lambda_variable)
       lambda_loss = self.lambda_loss(
           time_steps,
-          actions,
-          safety_rewards=next_time_steps.observation['task_agn_rew'])
+          next_actions,
+          safety_rewards=next_time_steps.observation['task_agn_rew'],
+          weights=weights)
     tf.debugging.check_numerics(lambda_loss, 'Lambda loss is inf or nan.')
-    if self._safety_pretraining:
-      # update target safety critic independently of target critic during pretraining...
-      self._update_target_safety_critic()
-    if self._lambda_scheduler is None:
-      if training:
-        lambda_grads = tape.gradient(lambda_loss, lambda_variable)
-        self._apply_gradients(lambda_grads, lambda_variable, self._lambda_optimizer)
-    else:
-      self._lambda_scheduler()
-    with tf.name_scope('Train_SC_Losses'):
+
+    if training:
+      if self._lambda_scheduler is None:
+          lambda_grads = tape.gradient(lambda_loss, lambda_variable)
+          self._apply_gradients(lambda_grads, lambda_variable,
+                                self._lambda_optimizer)
+      else:
+        self._lambda_scheduler()
+
+    with tf.name_scope('Losses'):
       tf.compat.v2.summary.scalar(
           name='lambda_loss', data=lambda_loss, step=self.train_step_counter)
       tf.compat.v2.summary.scalar(
@@ -353,15 +359,15 @@ class SqrlAgent(sac_agent.SacAgent):
     alpha_grads = tape.gradient(alpha_loss, alpha_variable)
     self._apply_gradients(alpha_grads, alpha_variable, self._alpha_optimizer)
 
-    if not self._train_critic_online:
-      # update safety critic
-      safe_rew = next_time_steps.observation['task_agn_rew']
-      # sc_weights = (safe_rew / tf.reduce_mean(safe_rew+1e-16) + (1-safe_rew) / (tf.reduce_mean(1-safe_rew))) / 2
-      # sc_weights = None
-      sc_weights = safe_rew * 99 + 1
-      safety_critic_loss, lambda_loss = self.train_sc(experience, safe_rew, sc_weights)
-    else:
-      safety_critic_loss, lambda_loss = None, None
+    # updates safety critic if not training online
+    safe_rew = next_time_steps.observation['task_agn_rew']
+    sc_weight = None
+    if self._fail_weight:
+      sc_weight = tf.where(tf.cast(safe_rew, tf.bool), self._fail_weight / 0.5,
+                           (1 - self._fail_weight) / 0.5)
+    safety_critic_loss, lambda_loss = self.train_sc(
+        experience, safe_rew, sc_weight,
+        training=(not self._train_critic_online))
 
     with tf.name_scope('Losses'):
       tf.compat.v2.summary.scalar(
@@ -370,9 +376,10 @@ class SqrlAgent(sac_agent.SacAgent):
           name='actor_loss', data=actor_loss, step=self.train_step_counter)
       tf.compat.v2.summary.scalar(
           name='alpha_loss', data=alpha_loss, step=self.train_step_counter)
-      if not self._train_critic_online:
+      if lambda_loss is not None:
         tf.compat.v2.summary.scalar(
             name='lambda_loss', data=lambda_loss, step=self.train_step_counter)
+      if safety_critic_loss is not None:
         tf.compat.v2.summary.scalar(
             name='safety_critic_loss',
             data=safety_critic_loss,
@@ -383,13 +390,9 @@ class SqrlAgent(sac_agent.SacAgent):
 
     total_loss = critic_loss + actor_loss + alpha_loss
 
-    if not self._train_critic_online:
-      extra = SafeSacLossInfo(
-          critic_loss=critic_loss, actor_loss=actor_loss, alpha_loss=alpha_loss,
-          safety_critic_loss=safety_critic_loss, lambda_loss=lambda_loss)
-    else:
-      extra = sac_agent.SacLossInfo(critic_loss=critic_loss, actor_loss=actor_loss,
-                                    alpha_loss=alpha_loss)
+    extra = SafeSacLossInfo(
+        critic_loss=critic_loss, actor_loss=actor_loss, alpha_loss=alpha_loss,
+        safety_critic_loss=safety_critic_loss, lambda_loss=lambda_loss)
 
     return tf_agent.LossInfo(loss=total_loss, extra=extra)
 
@@ -490,7 +493,7 @@ class SqrlAgent(sac_agent.SacAgent):
 
       td_targets = tf.stop_gradient(safety_rewards +
                                     (1 - safety_rewards) * gamma *
-                                    next_time_steps.discount * target_q_values * next_log_pis)
+                                    next_time_steps.discount * target_q_values)
 
       pred_input = (time_steps.observation, actions)
       pred_td_targets, _ = self._safety_critic_network(
@@ -505,7 +508,7 @@ class SqrlAgent(sac_agent.SacAgent):
       # Take the mean across the batch.
       safety_critic_loss = tf.reduce_mean(input_tensor=safety_critic_loss)
 
-      metrics = self._metrics or metrics
+      metrics = self._metrics + metrics if metrics else self._metrics
       if metrics:
         for metric in metrics:
           if isinstance(metric, tf.keras.metrics.AUC):
@@ -516,7 +519,6 @@ class SqrlAgent(sac_agent.SacAgent):
             metric.update_state(safety_rewards, rew_pred)
 
       if self._debug_summaries:
-        pred_td_targets = tf.nn.sigmoid(pred_td_targets)
         td_errors = td_targets - pred_td_targets
         common.generate_tensor_summaries('safety_td_errors', td_errors,
                                          self.train_step_counter)
@@ -622,23 +624,22 @@ class SqrlAgent(sac_agent.SacAgent):
       target_input_2 = (time_steps.observation, actions)
       target_q_values2, _ = self._critic_network_2(target_input_2, time_steps.step_type, training=False)
       target_q_values = tf.minimum(target_q_values1, target_q_values2)
-      if self._safety_pretraining:  # adds actor safety loss to actor_loss
-        pred_input = (time_steps.observation, actions)
-        q_val, _ = self._safety_critic_network(pred_input, time_steps.step_type)
-        q_safe = tf.nn.sigmoid(q_val)
+
+      pred_input = (time_steps.observation, actions)
+      q_val, _ = self._safety_critic_network(pred_input, time_steps.step_type)
+      q_safe = tf.nn.sigmoid(q_val)
+      # adds actor safety loss to actor_loss
+      if self._safety_pretraining:
+        actor_loss = tf.exp(self._log_alpha) * log_pi - target_q_values
+      else:
         # safety_mask = tf.cast(q_safe > self._target_safety, tf.bool)
         # actor_loss = (
         #         tf.exp(self._log_alpha) * log_pi * q_safe - target_q_values +
         #         tf.exp(self._log_lambda) * (q_safe - self._target_safety))
-        if self._lambda_var.name is 'initial_log_lambda':
-          lam = tf.exp(self._lambda_var)
-        else:
-          lam = self._lambda_var
-
+        lam = tf.exp(self._lambda_var)
         actor_loss = (tf.exp(self._log_alpha) * log_pi - target_q_values +
                       tf.stop_gradient(lam * (q_safe - self._target_safety)))
-      else:
-        actor_loss = tf.exp(self._log_alpha) * log_pi - target_q_values
+
       if weights is not None:
         actor_loss *= weights
       actor_loss = tf.reduce_mean(input_tensor=actor_loss)
@@ -656,8 +657,8 @@ class SqrlAgent(sac_agent.SacAgent):
           step=self.train_step_counter)
         common.generate_tensor_summaries('target_q_values', target_q_values,
                                          self.train_step_counter)
-        if not self._safety_pretraining:
-          common.generate_tensor_summaries('q_safe', q_safe, self.train_step_counter)
+        common.generate_tensor_summaries('q_safe', q_safe,
+                                         self.train_step_counter)
         batch_size = nest_utils.get_outer_shape(time_steps,
                                                 self._time_step_spec)[0]
         policy_state = self.policy.get_initial_state(batch_size)
@@ -703,7 +704,8 @@ class SqrlAgent(sac_agent.SacAgent):
     q_safe = tf.nn.sigmoid(q_val)
 
     lambda_loss = (
-        self._lambda_var * tf.stop_gradient(q_safe - self._target_safety))
+        self._lambda_var * tf.stop_gradient(-tf.math.log(q_safe) +
+                                            tf.math.log(self._target_safety)))
 
     if weights is not None:
       lambda_loss *= weights

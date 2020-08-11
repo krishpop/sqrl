@@ -4,8 +4,6 @@ import tf_agents.agents.sac.sac_agent
 import tf_agents.environments.suite_pybullet
 import tf_agents.agents.ddpg.critic_network
 import tf_agents.networks.actor_distribution_network
-
-import safemrl.trainer
 import safemrl.algos.ensemble_sac_agent
 
 include 'networks.gin'

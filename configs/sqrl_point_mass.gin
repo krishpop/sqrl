@@ -13,6 +13,8 @@ include 'point_mass_default.gin'
 EP_LEN = 30
 INITIAL_NUM_STEPS = 500
 NUM_STEPS = 50000
+TARGET_SAFETY = 0.4
+SAFETY_GAMMA = 0.4
 
 agents.normal_projection_net.init_means_output_factor = 0.01
 
@@ -23,9 +25,6 @@ trainer.train_eval.kstep_fail = 0
 # safe_sac_agent.SqrlAgent.target_entropy = -2
 safe_sac_agent.SqrlAgent.gamma = 1.
 safe_sac_agent.SqrlAgent.initial_log_alpha = 0.
-safe_sac_agent.SqrlAgent.safety_gamma = 0.4
-safe_sac_agent.SqrlAgent.target_safety = 0.4
-
 
 # point_mass.PointMassEnv.start = (0, 6)
 # point_mass.GoalConditionedPointWrapper.goal = (7, 6)

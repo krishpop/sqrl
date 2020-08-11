@@ -1,0 +1,20 @@
+include 'default_macros.gin'
+import safemrl.train_sc
+import tf_agents.policies.actor_policy
+
+NUM_STEPS = 50000
+SC_LAYER_SIZE = 512
+SC_LEARNING_RATE = 1e-5
+SAFETY_GAMMA = 0.7
+
+# TRAINER BINDINGS
+train_sc.train_eval.env_name = %ENV_STR
+train_sc.train_eval.env_load_fn = %ENV_LOAD_FN
+train_sc.train_eval.gym_env_wrappers = %ENV_WRAPPERS
+train_sc.train_eval.agent_class = %AGENT_CLASS
+train_sc.train_eval.eval_metrics = %EVAL_METRICS
+train_sc.train_eval.num_global_steps = %NUM_STEPS
+train_sc.train_eval.num_eval_episodes = %NUM_EVAL
+train_sc.train_eval.safety_critic_joint_fc_layers = (%SC_LAYER_SIZE, %SC_LAYER_SIZE)
+train_sc.train_eval.safety_critic_lr = %SC_LEARNING_RATE
+train_sc.safety_critic_loss.safety_gamma = %SAFETY_GAMMA

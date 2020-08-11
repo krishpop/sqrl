@@ -272,6 +272,47 @@ class CubeAverageScoreMetric(py_metrics.StreamingMetric):
 
 
 @gin.configurable
+class AverageGymInfoMetric(py_metrics.StreamingMetric):
+  """Computes average score at end of trajectory"""
+  def __init__(self, env, info_key='score', name='AverageScore', buffer_size=10,
+               batch_size=None):
+    """
+    Creates an CubeAverageScoreMetric.
+    Args:
+      env: Instance of gym.Env that implements get_score() which updates the
+           metric
+      info_key: str of info dict key that is being averaged
+      name: metric name
+      buffer_size: number of episodes to compute average over
+    """
+
+    # Set a dummy value on self._np_state.obs_val so it gets included in
+    # the first checkpoint (before metric is first called).
+    self._wrapped_gym_envs = env
+    self._info_key = info_key
+    batch_size = batch_size or len(env)
+    self._np_state = numpy_storage.NumpyState()
+    super(AverageGymInfoMetric, self).__init__(
+        name, buffer_size=buffer_size, batch_size=batch_size)
+
+  def _reset(self, batch_size):
+    return
+
+  def _batched_call(self, trajectory):
+    """Processes the trajectory to update the metric.
+
+    Args:
+      trajectory: a tf_agents.trajectory.Trajectory.
+    """
+
+    is_last = np.where(trajectory.is_last())
+
+    if len(is_last[0]) > 0:
+      for idx in is_last[0]:
+        self.add_to_buffer([self._wrapped_gym_envs[idx].get_info().get(self._info_key)])
+
+
+@gin.configurable
 class ThreeFingerAverageSuccessMetric(py_metrics.StreamingMetric):
   """Computes average success rate for envs which terminate with positive reward in successful eps."""
 

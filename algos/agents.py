@@ -37,7 +37,6 @@ from safemrl.utils import misc
 from tf_agents.agents.sac import sac_agent
 from tf_agents.networks import encoding_network
 from tf_agents.networks import network
-from tf_agents.networks import actor_distribution_network
 from tf_agents.policies import actor_policy, tf_policy
 from tf_agents.policies import boltzmann_policy
 from tf_agents.specs import tensor_spec
@@ -194,7 +193,9 @@ class CriticNetwork(network.Network):
       joint_dropout_layer_params=None,
       kernel_initializer=tf.compat.v1.keras.initializers.VarianceScaling(
           scale=1. / 3., mode='fan_in', distribution='uniform'),
+      value_bias_initializer=None,
       activation_fn=tf.nn.relu,
+      value_activation_fn=None,
       name='CriticNetwork'):
     """Creates an instance of `CriticNetwork`.
 
@@ -251,9 +252,10 @@ class CriticNetwork(network.Network):
         batch_squash=False)
     self._value_layer = tf.keras.layers.Dense(
         1,
-        activation=None,
-        kernel_initializer=tf.keras.initializers.RandomUniform(-0.003, 0.003),
-        bias_initializer=tf.constant_initializer(-1),
+        activation=value_activation_fn,
+        kernel_initializer=tf.keras.initializers.RandomUniform(
+          minval=-0.003, maxval=0.003),
+        bias_initializer=value_bias_initializer,
         name='value')
 
   def call(self, observations, step_type, network_state=(), training=False, mask=None):
@@ -619,7 +621,8 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
     observation = tf.nest.pack_sequence_as(self.time_step_spec.observation, flat_observation)
     obs = nest_utils.stack_nested_tensors([observation for _ in range(n)])
 
-    actions = self._actor_network.output_spec.build_distribution(loc=ac_mean, scale=scale)
+    actions = self._actor_network.output_spec.build_distribution(loc=ac_mean,
+                                                                 scale=scale)
     sampled_ac = actions.sample(n)
 
     ac_outer_rank = nest_utils.get_outer_rank(sampled_ac, self.action_spec)

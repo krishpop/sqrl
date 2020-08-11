@@ -48,16 +48,19 @@ AGENT_CLASS_BINDINGS = {
   'sac-ensemble': 'ensemble_sac_agent.EnsembleSacAgent'
 }
 
-def load_safety_critic_ckpt(ckpt_dir, safety_critic_net, ckpt_step=None):
+
+def load_safety_critic_ckpt(ckpt_dir, safety_critic_net, ckpt_step=None,
+                            **ckpt_kwargs):
   safety_critic_checkpointer = common.Checkpointer(
     ckpt_dir=ckpt_dir,
-    safety_critic=safety_critic_net)
+    safety_critic=safety_critic_net,
+    **ckpt_kwargs)
   if ckpt_step is None:
     safety_critic_checkpointer.initialize_or_restore().assert_existing_objects_matched()
   else:
-    safety_critic_checkpointer._checkpoint.restore(  # pylint: disable=protected-access
+    safety_critic_checkpointer._checkpoint.restore(
         osp.join(ckpt_dir, 'ckpt-{}'.format(ckpt_step)))
-    safety_critic_checkpointer._load_status.assert_existing_objects_matched()  # pylint: disable=protected-access
+    safety_critic_checkpointer._load_status.assert_existing_objects_matched()
   return safety_critic_net
 
 
@@ -77,7 +80,7 @@ def load_agent_ckpt(ckpt_dir, tf_agent, global_step=None):
   if global_step is None:
     global_step = tf.compat.v1.train.get_or_create_global_step()
   train_checkpointer = common.Checkpointer(
-      ckpt_dir=ckpt_dir, agent=tf_agent, global_step=global_step)
+    ckpt_dir=ckpt_dir, agent=tf_agent, global_step=global_step)
   train_checkpointer.initialize_or_restore()
   return tf_agent, global_step
 
@@ -91,15 +94,9 @@ def cleanup_checkpoints(checkpoint_dir):
   return
 
 
-def copy_rb(rb_s, rb_t):
-  for x1, x2 in zip(rb_s.variables(), rb_t.variables()):
-    x2.assign(x1)
-  return rb_t
-
-
 def load_pi_ckpt(ckpt_dir, policy):
   policy_checkpointer = common.Checkpointer(
-      ckpt_dir=ckpt_dir, max_to_keep=1, policy=policy)
+      ckpt_dir=ckpt_dir, policy=policy)
   policy_checkpointer.initialize_or_restore().assert_existing_objects_matched()
   return policy
 
@@ -170,34 +167,6 @@ def plot_point_mass(env, states):
   ax.scatter(states[:, 1] - .5, states[:, 0] - .5)
   ax.set_axis_off()
   return f
-
-def process_replay_buffer(replay_buffer, max_ep_len=500, k=1, as_tensor=True):
-  """Process replay buffer to infer safety rewards with episode boundaries."""
-  rb_data = replay_buffer.gather_all()
-  rew = rb_data.reward
-
-  boundary_idx = np.where(rb_data.is_boundary().numpy())[1]
-
-  last_idx = 0
-  k_labels = []
-
-  for term_idx in boundary_idx:
-    # TODO: remove +1?
-    fail = 1 - int(term_idx - last_idx >= max_ep_len + 1)
-    ep_rew = tf.gather(rew, np.arange(last_idx, term_idx), axis=1)
-    labels = np.zeros(ep_rew.shape_as_list())  # ignore obs dim
-    labels[:, -k:] = fail
-    k_labels.append(labels)
-    last_idx = term_idx
-
-  flat_labels = np.concatenate(k_labels, axis=-1).astype(np.float32)
-  n_flat_labels = flat_labels.shape[1]
-  n_rews = rb_data.reward.shape_as_list()[1]
-  safe_rew_labels = np.pad(
-      flat_labels, ((0, 0), (0, n_rews - n_flat_labels)), mode='constant')
-  if as_tensor:
-    return tf.to_float(safe_rew_labels)
-  return safe_rew_labels
 
 
 # Pre-processor layers to remove observation from observation dict returned by

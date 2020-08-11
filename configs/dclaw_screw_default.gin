@@ -1,0 +1,21 @@
+import pddm.envs
+import safemrl.utils.metrics
+import safemrl.algos.agents
+import safemrl.utils.misc
+import tf_agents.environments.suite_mujoco
+import tf_agents.environments.suite_gym
+import tf_agents.networks.actor_distribution_network
+
+ENV_STR = 'DClawScrewFixed-v0'
+ENV_LOAD_FN = @suite_mujoco.load
+ENV_WRAPPERS = []
+EP_LEN = 80
+TRAIN_METRICS = []
+EVAL_METRICS = []
+ENV_METRIC_FACTORIES = []
+INITIAL_NUM_STEPS = 1000
+NUM_STEPS = 1000000
+
+suite_mujoco.load.max_episode_steps = %EP_LEN
+
+agents.CriticNetwork.preprocessing_combiner = @misc.concatenate_lambda_layer()
