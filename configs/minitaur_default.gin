@@ -11,11 +11,13 @@ ENV_STR = "MinitaurGoalVelocityEnv-v0"
 ENV_WRAPPERS = [@minitaur.TaskAgnWrapper, @minitaur.CurrentVelWrapper]
 NUM_STEPS = 500000
 INITIAL_NUM_STEPS = 500
+GOAL_VELOCITY = 0.3
+KSTEP_FAIL = 4  # number of steps from end of failed trajectory considered as failed
 TRAIN_METRICS = [
     @safemrl.utils.metrics.AverageEarlyFailureMetric(),
+    @safemrl.utils.metrics.TotalFallenMetric(),
     @safemrl.utils.metrics.MinitaurAverageSpeedMetric(),
     @safemrl.utils.metrics.MinitaurAverageMaxSpeedMetric(),
-    @safemrl.utils.metrics.TotalFallenMetric()
 ]
 
 # eval_failure/singleton.constructor = @safemrl.utils.metrics.AverageEarlyFailureMetric
@@ -34,8 +36,8 @@ minitaur.MinitaurGoalVelocityEnv.max_steps = %EP_LEN
 safemrl.utils.metrics.AverageEarlyFailureMetric.max_episode_len = %EP_LEN
 
 minitaur.MinitaurGoalVelocityEnv.goal_limit = 0.8
-minitaur.MinitaurGoalVelocityEnv.goal_vel = 0.3
-minitaur.MinitaurGoalVelocityEnv.butterworth = False # True
+minitaur.MinitaurGoalVelocityEnv.goal_vel = %GOAL_VELOCITY
+minitaur.MinitaurGoalVelocityEnv.butterworth = False
 
 actor_distribution_network.ActorDistributionNetwork.preprocessing_combiner = (
     @misc.extract_observation_layer()

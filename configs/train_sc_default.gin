@@ -17,4 +17,5 @@ train_sc.train_eval.num_global_steps = %NUM_STEPS
 train_sc.train_eval.num_eval_episodes = %NUM_EVAL
 train_sc.train_eval.safety_critic_joint_fc_layers = (%SC_LAYER_SIZE, %SC_LAYER_SIZE)
 train_sc.train_eval.safety_critic_lr = %SC_LEARNING_RATE
+train_sc.train_eval.fail_weight = %FAIL_WEIGHT
 train_sc.safety_critic_loss.safety_gamma = %SAFETY_GAMMA

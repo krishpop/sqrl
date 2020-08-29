@@ -14,7 +14,7 @@ def benchmark(dataset, num_epochs=2):
     tf.print("Execution time:", time.perf_counter() - start_time)
 
 
-def get_rand_batch(data, data_spec, batch_size=128):
+def get_rand_batch(data, data_spec, mask=None, batch_size=128):
   """
   Gets random batch from Trajectory data extracted from replay_buffer.as_dataset
 
@@ -23,6 +23,9 @@ def get_rand_batch(data, data_spec, batch_size=128):
   :param batch_size: int, default is 128
   :return: batch from data
   """
+  if mask is not None:
+    data = nest_utils.fast_map_structure(lambda *x: tf.boolean_mask(*x, mask),
+                                         data)
   n = nest_utils.get_outer_shape(data, data_spec).numpy()[0]
   mask = np.repeat(False, n)
   mask[np.random.choice(np.arange(n), batch_size, replace=False)] = True
@@ -40,18 +43,25 @@ def concat_batches(batch1, batch2, data_spec):
 
 
 def copy_rb(rb_s, rb_t, filter_mask=None):
-  last_id = None
+  """
+  Copies replay buffer from rb_s to rb_t, one variable at a time
+  :param rb_s: source replay buffer (copying from)
+  :param rb_t: target replay buffer (copying to, usually empty)
+  :param filter_mask: mask to put on source replay buffer to prevent all values
+    from being copied
+  :return: target replay buffer
+  """
+  max_len_s, max_len_t = rb_s._max_length, rb_t._max_length
   for x1, x2 in zip(rb_s.variables(), rb_t.variables()):
     varname = x1.name.split('/')[-1].rstrip(':0')
     if varname != 'last_id':
       if filter_mask is not None:
         assert filter_mask.dtype == tf.bool, 'filter_mask must be dtype tf.bool'
         x1 = tf.boolean_mask(x1, filter_mask)
-      if varname == 'id':
-        last_id = x1.numpy().flatten()[-1]
+    if varname == 'last_id' or max_len_t == x1.shape[0]:
+      x2.assign(x1)
     else:
-      x1 = last_id
-    x2.assign(x1)
+      x2[:max_len_s].assign(x1)
   return rb_t
 
 

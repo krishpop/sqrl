@@ -2,20 +2,25 @@ import pddm.envs
 import safemrl.utils.metrics
 import safemrl.algos.agents
 import safemrl.utils.misc
-import tf_agents.environments.suite_mujoco
 import tf_agents.environments.suite_gym
 import tf_agents.networks.actor_distribution_network
+import tf_agents.environments.wrappers
 
 ENV_STR = 'DClawScrewFixed-v0'
-ENV_LOAD_FN = @suite_mujoco.load
+ENV_LOAD_FN = @suite_gym.load
 ENV_WRAPPERS = []
+# PYENV_WRAPPERS = [@wrappers.ActionRepeat]
+# NUM_REPEAT = 4
 EP_LEN = 80
 TRAIN_METRICS = []
 EVAL_METRICS = []
-ENV_METRIC_FACTORIES = []
+ENV_METRIC_FACTORIES = [@score_metric/metrics.AverageGymInfoMetric]
 INITIAL_NUM_STEPS = 1000
 NUM_STEPS = 1000000
 
-suite_mujoco.load.max_episode_steps = %EP_LEN
+suite_gym.load.max_episode_steps = %EP_LEN
+# suite_gym.load.env_wrappers = %PYENV_WRAPPERS
+# wrappers.ActionRepeat.times = %NUM_REPEAT
 
+score_metric/metrics.AverageGymInfoMetric.info_key = 'score/success'
 agents.CriticNetwork.preprocessing_combiner = @misc.concatenate_lambda_layer()

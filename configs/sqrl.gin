@@ -46,8 +46,9 @@ metrics.AverageEarlyFailureMetric.batch_size = 1
 # safe_dynamic_episode_driver.SafeDynamicEpisodeDriver.ep_history_unsafe = 2
 
 # AGENT BINDINGS
-safe_sac_agent.SqrlAgent.reward_scale_factor = 1.0
+safe_sac_agent.SqrlAgent.reward_scale_factor = %REWARD_SCALE_FACTOR
 safe_sac_agent.SqrlAgent.gamma = 0.99
+safe_sac_agent.SqrlAgent.gradient_clipping = %GRADIENT_CLIPPING
 
 safe_sac_agent.SqrlAgent.target_update_tau = 0.005
 safe_sac_agent.SqrlAgent.target_update_period = 1

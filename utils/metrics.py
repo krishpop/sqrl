@@ -185,7 +185,7 @@ class MinitaurAverageSpeedMetric(py_metrics.StreamingMetric):
     total_speed = self._np_state.speed
     is_last = np.where(trajectory.is_boundary())
     not_last = np.where(~trajectory.is_boundary())
-    total_speed[not_last] += trajectory.observation['current_vel'][not_last]
+    total_speed[not_last] += trajectory.observation['current_vel'][~trajectory.is_boundary()]
     episode_steps[not_last] += 1
 
     if len(is_last[0]) > 0:
@@ -246,7 +246,10 @@ class CubeAverageScoreMetric(py_metrics.StreamingMetric):
 
     # Set a dummy value on self._np_state.obs_val so it gets included in
     # the first checkpoint (before metric is first called).
-    self._env = env
+    if isinstance(env, list):
+      self._env = env
+    else:
+      self._env = [env]
     batch_size = batch_size or len(env)
     self._np_state = numpy_storage.NumpyState()
     self._np_state.adds_to_buff = np.array(0, dtype=float)
@@ -268,7 +271,7 @@ class CubeAverageScoreMetric(py_metrics.StreamingMetric):
 
     if len(is_last[0]) > 0:
       for idx in is_last[0]:
-        self.add_to_buffer([self._env[idx].last_score])
+        self.add_to_buffer([self._env[idx].gym.last_score])
 
 
 @gin.configurable

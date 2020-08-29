@@ -23,6 +23,7 @@ EXCLUDE_KEYS = list(FLAGS) + ['name', 'notes', 'monitor', 'debug', 'eager_debug'
                               'num_threads', 'help', 'helpfull', 'helpshort', 'helpxml',
                               'resume_id']
 
+
 def define_flags():
   # Configs & checkpointing args
   flags.DEFINE_string('name', None, 'Name for run on wandb')
@@ -150,7 +151,7 @@ def gin_bindings_from_config(config, gin_bindings=[]):
       if config.num_critics:
         gin_bindings.append('trainer.train_eval.num_critics = {}'.format(config.num_critics))
       if config.percentile:
-        gin_bindings.append('ensemble_sac_agent.EnsembleSacAgent.percentile = {}'.format(config.percentile))
+        gin_bindings.append('PERCENTILE = {}'.format(config.percentile))
     agent_prefix = 'ensemble_sac_agent.EnsembleSacAgent'
 
   # Config value updates
@@ -184,14 +185,15 @@ def gin_bindings_from_config(config, gin_bindings=[]):
       ))
 
     if config.reward_scale_factor:
-      gin_bindings.append('{}.reward_scale_factor = {}'.format(agent_prefix, config.reward_scale_factor))
+      gin_bindings.append('REWARD_SCALE_FACTOR = {}'.format(
+        config.reward_scale_factor))
     if config.target_update_tau:
       gin_bindings.append('{}.target_update_tau = {}'.format(agent_prefix, config.target_update_tau))
     if config.target_update_period:
       gin_bindings.append('{}.target_update_period = {}'.format(agent_prefix, config.target_update_period))
     if config.gamma:
       gin_bindings.append('{}.gamma = {}'.format(agent_prefix, config.gamma))
-    gin_bindings.append('{}.gradient_clipping = {}'.format(agent_prefix, config.gradient_clipping))
+    gin_bindings.append('GRADIENT_CLIPPING = {}'.format(config.gradient_clipping))
 
   ## Agent-specific bindings
   if agent_prefix != 'wcpg_agent.WcpgAgent':  # WCPG does not use target entropy
@@ -213,21 +215,22 @@ def gin_bindings_from_config(config, gin_bindings=[]):
 
   ## Env-specific bindings
   env_str = config.env_str or gin.query_parameter('%ENV_STR')
-  if 'Minitaur' in env_str:
-    if config.friction:
-      gin_bindings.append('minitaur.MinitaurGoalVelocityEnv.friction = {}'.format(config.friction))
-    if config.goal_vel:
-      gin_bindings.append("minitaur.MinitaurGoalVelocityEnv.goal_vel = {}".format(config.goal_vel))
-  elif 'Cube' in env_str:
-    if config.finetune:
-      gin_bindings.append("cube_env.SafemrlCubeEnv.goal_task = ('more_left', 'more_right', 'more_up', 'more_down')")
-  elif 'DrunkSpider' in env_str:
-    if config.action_noise:
-      gin_bindings.append('point_mass.PointMassEnv.action_noise = {}'.format(config.action_noise))
-    if config.action_scale:
-      gin_bindings.append('point_mass.PointMassEnv.action_scale = {}'.format(config.action_scale))
-    if config.finetune:
-      gin_bindings.append("point_mass.env_load_fn.goal = ({}})".format(config.pm_goal))
+  if not config.train_finetune:
+    if 'Minitaur' in env_str:
+      if config.friction:
+        gin_bindings.append('minitaur.MinitaurGoalVelocityEnv.friction = {}'.format(config.friction))
+      if config.goal_vel:
+        gin_bindings.append("GOAL_VELOCITY = {}".format(config.goal_vel))
+    elif 'Cube' in env_str:
+      if config.finetune:
+        gin_bindings.append("cube_env.SafemrlCubeEnv.goal_task = ('more_left', 'more_right', 'more_up', 'more_down')")
+    elif 'DrunkSpider' in env_str:
+      if config.action_noise:
+        gin_bindings.append('point_mass.PointMassEnv.action_noise = {}'.format(config.action_noise))
+      if config.action_scale:
+        gin_bindings.append('point_mass.PointMassEnv.action_scale = {}'.format(config.action_scale))
+      if config.finetune:
+        gin_bindings.append("point_mass.env_load_fn.goal = ({})".format(config.pm_goal))
 
   if config.initial_collect_steps:
     gin_bindings.append("INITIAL_NUM_STEPS = {}".format(config.initial_collect_steps))
@@ -247,7 +250,7 @@ def finetune_gin_bindings(config):
     if config.friction:
       gin_bindings.append('minitaur.MinitaurGoalVelocityEnv.friction = {}'.format(config.friction))
     if config.goal_vel:
-      gin_bindings.append("minitaur.MinitaurGoalVelocityEnv.goal_vel = {}".format(config.goal_vel))
+      gin_bindings.append("GOAL_VELOCITY = {}".format(config.goal_vel))
   elif 'Cube' in env_str:
     if config.finetune:
       gin_bindings.append("cube_env.SafemrlCubeEnv.goal_task = ('more_left', 'more_right', 'more_up', 'more_down')")

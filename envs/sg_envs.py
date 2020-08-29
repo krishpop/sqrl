@@ -1,4 +1,7 @@
-from safety_gym.envs.engine import Engine
+try:
+  from safety_gym.envs.engine import Engine
+except:
+  pass
 from gym.envs.registration import register
 
 import gym

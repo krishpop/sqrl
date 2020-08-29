@@ -651,11 +651,17 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
 
     safe_ac_idx = tf.where(safe_ac_mask)
     fail_prob_safe = tf.gather(fail_prob, safe_ac_idx[:, 0])
+    safe_idx = self._get_safe_idx(safe_ac_mask, fail_prob, sampled_ac,
+                                  safe_ac_idx, actions, fail_prob_safe)
+    ac = sampled_ac[safe_idx]
+    return ac
 
-    if fail_prob_safe.shape.as_list()[0] == 0:
+  @common.function(autograph=True)
+  def _get_safe_idx(self, safe_ac_mask, fail_prob, sampled_ac, safe_ac_idx,
+                   actions, fail_prob_safe):
+    if tf.math.count_nonzero(safe_ac_mask) == 0:
       # picks safest action
       safe_idx = tf.argmin(fail_prob)
-      return None
     else:
       sampled_ac = tf.gather(sampled_ac, safe_ac_idx)
       # picks most unsafe "safe" action
@@ -666,8 +672,7 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
 
       if self._training:
         # picks random safe_action, weighted by 1 - fail_prob_safe (so higher weight for safer actions)
-        safe_idx = tfp.distributions.Categorical([1 - fail_prob_safe]).sample()
-      else:
+        # safe_idx = tfp.distributions.Categorical([1 - fail_prob_safe]).sample()
         if self._sampling_method == 'rejection':
           # standard rejection sampling with prob proportional to original policy
           log_prob = common.log_probability(actions, sampled_ac, self.action_spec)
@@ -676,21 +681,15 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
           # picks random risky safe action, weighted by fail_prob_safe (so higher weight for less safe actions)
           safe_idx = tfp.distributions.Categorical([fail_prob_safe]).sample()
         elif self._sampling_method == 'safe':
-          safe_idx = tfp.distributions.Categorical([fail_prob_safe]).sample()
-
+          safe_idx = tfp.distributions.Categorical([1-fail_prob_safe]).sample()
       safe_idx = tf.reshape(safe_idx, [-1])[0]
-
-    ac = sampled_ac[safe_idx]
-    return ac
+    return safe_idx
 
   def _apply_actor_network(self, observation, step_type, policy_state, mask=None):
     if observation['observation'].shape.as_list()[0] is None:
       has_batch_dim = True
     else:
       has_batch_dim = observation['observation'].shape.as_list()[0] > 1
-
-    # batch_size = nest_utils.get_outer_shape(observation, self.time_step_spec.observation)[0]
-    # has_batch_dim = tf.function(batch_size > 1)()
 
     if self._observation_normalizer:
       observation = self._observation_normalizer.normalize(observation)
@@ -700,7 +699,7 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
                                                 training=self._training)
     # EDIT 5/18 - training now determines whether safe/unsafe actions are sampled
     # returns normal actions, unmasked, when not training
-    if not self._training or has_batch_dim:
+    if not self._training:
       return actions, policy_state
 
     # setup input for sample_action
@@ -719,8 +718,8 @@ class SafeActorPolicyRSVar(actor_policy.ActorPolicy):
       return actions, policy_state
 
     if has_batch_dim:
-      ac = tf.reshape(ac, [-1, 2])
-    else:
+      ac = tf.squeeze(ac)
+    if not has_batch_dim:
       assert ac.shape.as_list()[0] == 1, 'action shape is not correct: {}'.format(ac.shape.as_list())
     return ac, policy_state
 

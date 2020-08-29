@@ -13,6 +13,8 @@ include 'sac.gin'
 LEARNING_RATE = 3e-4
 CRITIC_LR = 1e-4
 AGENT_CLASS = 'wcpg'
+REWARD_SCALE_FACTOR = 10.
+GRADIENT_CLIPPING = 2.0
 # ENV_WRAPPERS = []
 
 TRAIN_METRICS = [
@@ -23,8 +25,8 @@ EVAL_METRICS = [
 # trainer.train_eval.gym_env_wrappers = []
 
 wcpg_agent.WcpgAgent.target_update_tau = 0.005
-wcpg_agent.WcpgAgent.reward_scale_factor = 10.0
-# wcpg_agent.WcpgAgent.gradient_clipping = 2.0
+wcpg_agent.WcpgAgent.reward_scale_factor = %REWARD_SCALE_FACTOR
+# wcpg_agent.WcpgAgent.gradient_clipping = %GRADIENT_CLIPPING
 wcpg_agent.WcpgAgent.gamma = 0.99
 wcpg_agent.WcpgAgent.exploration_noise_stddev = 1.0
 wcpg_agent.WcpgAgent.actor_optimizer = @ac_opt/tf.keras.optimizers.Adam()

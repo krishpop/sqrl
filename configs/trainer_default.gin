@@ -1,11 +1,11 @@
 include 'default_macros.gin'
 import safemrl.trainer
 import tf_agents.policies.actor_policy
+import tf_agents.environments.suite_gym
 
 # TRAINER BINDINGS
 trainer.train_eval.env_name = %ENV_STR
 trainer.train_eval.env_load_fn = %ENV_LOAD_FN
-trainer.train_eval.gym_env_wrappers = %ENV_WRAPPERS
 trainer.train_eval.agent_class = %AGENT_CLASS
 trainer.train_eval.train_metrics = %TRAIN_METRICS
 trainer.train_eval.eval_metrics = %EVAL_METRICS
@@ -14,6 +14,10 @@ trainer.train_eval.num_global_steps = %NUM_STEPS
 trainer.train_eval.online_critic = False
 trainer.train_eval.num_eval_episodes = %NUM_EVAL
 trainer.train_eval.keep_rb_checkpoint = True
+trainer.train_eval.kstep_fail = %KSTEP_FAIL
+
+# ENV WRAPPER BINDINGS
+suite_gym.load.gym_env_wrappers = %ENV_WRAPPERS
 
 ## TRAINER DRIVER BINDINGS
 trainer.train_eval.initial_collect_driver_class = @init_collect/dynamic_step_driver.DynamicStepDriver

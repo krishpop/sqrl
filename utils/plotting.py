@@ -1,8 +1,12 @@
+import imageio
+import os
+import os.path as osp
 import matplotlib.pyplot as plt
 import tensorflow as tf
 tf.compat.v1.enable_v2_behavior()
 
 from tf_agents.trajectories import trajectory
+from tf_agents.utils import nest_utils
 
 
 def plot_fail_prob(init_step, after_init_step,
@@ -54,3 +58,32 @@ def embed_mp4(filename):
   </video>'''.format(b64.decode())
 
   return IPython.display.HTML(tag)
+
+
+def record_mp4(eval_policy, tf_env, vid_path='../videos/', step=0):
+  save_vid_dir = osp.abspath(osp.join(vid_path, '{}_steps'.format(step)))
+
+  if not osp.exists(save_vid_dir):
+    os.makedirs(save_vid_dir)
+
+  env = tf_env.pyenv.envs[0]
+  time_step = tf_env.reset()
+  frames = [env.render('rgb_array')]
+  pol_state = eval_policy.get_initial_state(1)
+  while not time_step.is_last():
+      time_step = nest_utils.unbatch_nested_tensors(time_step)
+      action_step = eval_policy.action(time_step, pol_state)
+      action, pol_state = action_step.action, action_step.state
+      time_step = tf_env.step(nest_utils.batch_nested_tensors(action))
+      frames.append(env.render('rgb_array'))
+
+  i = 0
+  vid_save_path = osp.join(save_vid_dir, 'episode-{}.mp4'.format(i))
+  while osp.exists(vid_save_path):
+      i += 1
+      vid_save_path = osp.join(save_vid_dir, 'episode-{}.mp4'.format(i))
+
+  with imageio.get_writer(vid_save_path) as writer:
+      for frame in frames:
+          writer.append_data(frame)
+  return vid_save_path

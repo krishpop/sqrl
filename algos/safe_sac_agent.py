@@ -91,7 +91,6 @@ class SqrlAgent(sac_agent.SacAgent):
                safety_pretraining=True,
                train_critic_online=True,
                resample_counter=None,
-               sc_metrics=None,
                fail_weight=None,
                name="SqrlAgent"):
     self._safety_critic_network = safety_critic_network
@@ -154,7 +153,6 @@ class SqrlAgent(sac_agent.SacAgent):
       self._lambda_scheduler = lambda_scheduler
     else:
       self._lambda_scheduler = lambda_scheduler(self._lambda_var)
-    self._metrics = sc_metrics
     self._safety_pretraining = safety_pretraining
     self._safe_td_errors_loss_fn = safe_td_errors_loss_fn
     self._safety_gamma = safety_gamma or self._gamma
@@ -164,6 +162,10 @@ class SqrlAgent(sac_agent.SacAgent):
         tau=self._target_update_tau, period=self._target_update_period)
     else:
       self._update_target_safety_critic = None
+
+  @property
+  def safe_policy(self):
+    return self._safe_policy
 
   def _get_target_updater_safety_critic(self, tau=1.0, period=1):
     """Performs a soft update of the target network parameters.
@@ -218,7 +220,7 @@ class SqrlAgent(sac_agent.SacAgent):
 
   def train_sc(self, experience, safe_rew, weights=None, metrics=None,
                training=True):
-    """Returns a train op to update the agent's networks.
+    """Returns a train op to update the agent's safety critic networks.
 
     This method trains with the provided batched experience.
 
@@ -262,7 +264,7 @@ class SqrlAgent(sac_agent.SacAgent):
 
     # update target safety critic independently of target critic during
     # pretraining if training critic online (i.e. on-policy data)
-    if self._train_critic_online:
+    if training and self._train_critic_online:
       self._update_target_safety_critic()
 
     lambda_variable = [self._lambda_var]
@@ -448,11 +450,16 @@ class SqrlAgent(sac_agent.SacAgent):
     """Get actions and corresponding log probabilities from policy."""
     # Get raw action distribution from policy, and initialize bijectors list.
     batch_size = nest_utils.get_outer_shape(time_steps, self.time_step_spec)[0]
-    policy_state = self.collect_policy.get_initial_state(batch_size)
-    action_distribution = self.collect_policy.distribution(
+    policy = self.collect_policy
+    policy_state = policy.get_initial_state(batch_size)
+    action_distribution = policy.distribution(
       time_steps, policy_state=policy_state).action
     # Sample actions and log_pis from transformed distribution.
-    actions = tf.nest.map_structure(lambda d: d.sample(), action_distribution)
+    if safety_constrained:
+      actions, policy_state = self.safe_policy._apply_actor_network(
+          time_steps.observation, time_steps.step_type, policy_state)
+    else:
+      actions = tf.nest.map_structure(lambda d: d.sample(), action_distribution)
     log_pi = common.log_probability(action_distribution, actions,
                                     self.action_spec)
 
@@ -484,8 +491,8 @@ class SqrlAgent(sac_agent.SacAgent):
       tf.nest.assert_same_structure(time_steps, self.time_step_spec)
       tf.nest.assert_same_structure(next_time_steps, self.time_step_spec)
 
-      next_actions, next_log_pis = self._actions_and_log_probs(  # pylint: disable=unused-variable
-          next_time_steps)
+      next_actions, next_log_pis = self._actions_and_log_probs(
+        next_time_steps, safety_constrained=True)
       target_input = (next_time_steps.observation, next_actions)
       target_q_values, _ = self._target_safety_critic_network(
           target_input, next_time_steps.step_type)
@@ -508,7 +515,6 @@ class SqrlAgent(sac_agent.SacAgent):
       # Take the mean across the batch.
       safety_critic_loss = tf.reduce_mean(input_tensor=safety_critic_loss)
 
-      metrics = self._metrics + metrics if metrics else self._metrics
       if metrics:
         for metric in metrics:
           if isinstance(metric, tf.keras.metrics.AUC):

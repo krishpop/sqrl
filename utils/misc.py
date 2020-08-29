@@ -36,10 +36,8 @@ import functools
 
 from gym.wrappers import Monitor
 from tf_agents.utils import common
+from absl import logging
 
-
-# def construct_tf_agent(agent_class):
-#   if agent_class
 
 AGENT_CLASS_BINDINGS = {
   'sac-safe': 'safe_sac_agent.SafeSacAgent',
@@ -57,31 +55,45 @@ def load_safety_critic_ckpt(ckpt_dir, safety_critic_net, ckpt_step=None,
     **ckpt_kwargs)
   if ckpt_step is None:
     safety_critic_checkpointer.initialize_or_restore().assert_existing_objects_matched()
+    ckpt_path = safety_critic_checkpointer._manager.latest_checkpoint
+    ckpt_step = int(ckpt_path.split('/')[-1].lstrip('ckpt-'))
   else:
     safety_critic_checkpointer._checkpoint.restore(
         osp.join(ckpt_dir, 'ckpt-{}'.format(ckpt_step)))
     safety_critic_checkpointer._load_status.assert_existing_objects_matched()
-  return safety_critic_net
+  logging.info('Loaded safety critic from checkpoint: %d', ckpt_step)
+  return safety_critic_checkpointer
 
 
 def load_rb_ckpt(ckpt_dir, replay_buffer, ckpt_step=None):
   rb_checkpointer = common.Checkpointer(
-      ckpt_dir=ckpt_dir, max_to_keep=5, replay_buffer=replay_buffer)
+      ckpt_dir=ckpt_dir, replay_buffer=replay_buffer, max_to_keep=5)
   if ckpt_step is None:
     rb_checkpointer.initialize_or_restore().assert_existing_objects_matched()
+    ckpt_path = rb_checkpointer._manager.latest_checkpoint
+    ckpt_step = int(ckpt_path.split('/')[-1].lstrip('ckpt-'))
   else:
     rb_checkpointer._checkpoint.restore(  # pylint: disable=protected-access
         osp.join(ckpt_dir, 'ckpt-{}'.format(ckpt_step)))
     rb_checkpointer._load_status.assert_existing_objects_matched()  # pylint: disable=protected-access
+  logging.info('Loaded replay buffer from checkpoint: %d', ckpt_step)
   return replay_buffer
 
 
-def load_agent_ckpt(ckpt_dir, tf_agent, global_step=None):
+def load_agent_ckpt(ckpt_dir, tf_agent, ckpt_step=None, global_step=None):
   if global_step is None:
     global_step = tf.compat.v1.train.get_or_create_global_step()
   train_checkpointer = common.Checkpointer(
     ckpt_dir=ckpt_dir, agent=tf_agent, global_step=global_step)
-  train_checkpointer.initialize_or_restore()
+  if ckpt_step is None:
+    train_checkpointer.initialize_or_restore().assert_existing_objects_matched()
+    ckpt_path = train_checkpointer._manager.latest_checkpoint
+    ckpt_step = int(ckpt_path.split('/')[-1].lstrip('ckpt-'))
+  else:
+    train_checkpointer._checkpoint.restore(  # pylint: disable=protected-access
+        osp.join(ckpt_dir, 'ckpt-{}'.format(ckpt_step)))
+    train_checkpointer._load_status.assert_existing_objects_matched()  # pylint: disable=protected-access
+  logging.info('Loaded agent from checkpoint: %d', ckpt_step)
   return tf_agent, global_step
 
 

@@ -394,7 +394,8 @@ class EnsembleSacAgent(tf_agent.TFAgent):
             target_input, next_time_steps.step_type, training=False)
         target_q_values.append(target_q_values1)
 
-      target_q_values = tfp.stats.percentile(target_q_values, self._percentile, axis=0)
+      target_q_values = tfp.stats.percentile(target_q_values, self._percentile,
+                                             axis=0)
       # target_q_values = tf.reduce_min(target_q_values)  # - tf.exp(self._log_alpha) * next_log_pis
 
       td_targets = tf.stop_gradient(
@@ -408,8 +409,9 @@ class EnsembleSacAgent(tf_agent.TFAgent):
         pred_td_targets1, _ = cn(pred_input, time_steps.step_type, training=True)
         pred_td_targets.append(pred_td_targets1)
 
-      critic_loss = tf.reduce_mean([td_errors_loss_fn(td_targets, pred_td_target)
-                                   for pred_td_target in pred_td_targets], axis=0) * 2
+      critic_loss = tf.reduce_mean(
+        [td_errors_loss_fn(td_targets, pred_td_target) for pred_td_target in
+         pred_td_targets], axis=0)
 
       if weights is not None:
         critic_loss *= weights
@@ -447,7 +449,8 @@ class EnsembleSacAgent(tf_agent.TFAgent):
         target_q_values1, _ = cn(target_input, time_steps.step_type)
         target_q_values.append(target_q_values1)
       target_q_values = tf.reduce_min(target_q_values)
-      actor_loss = tf.exp(self._log_alpha) * log_pi - target_q_values  # -> max (min_i (Q_i(s,a)))
+      # loss = min [-(min_i (Q_i(s,a))) + entropy term]
+      actor_loss = tf.exp(self._log_alpha) * log_pi - target_q_values
       if weights is not None:
         actor_loss *= weights
       actor_loss = tf.reduce_mean(input_tensor=actor_loss)

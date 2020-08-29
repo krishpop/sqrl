@@ -14,12 +14,17 @@ NUM_STEPS = 1000000
 INITIAL_NUM_STEPS = 500
 AGENT_CLASS = 'sac_ensemble'
 LEARNING_RATE = 3e-4
+NUM_CRITICS = 10
+REWARD_SCALE_FACTOR = 50
+GRADIENT_CLIPPING = 2.
+PERCENTILE = 0.3
 
-trainer.train_eval.num_critics = 10
+trainer.train_eval.num_critics = %NUM_CRITICS
 
 ensemble_sac_agent.EnsembleSacAgent.target_update_tau = 0.005
-ensemble_sac_agent.EnsembleSacAgent.gradient_clipping = 2.
-ensemble_sac_agent.EnsembleSacAgent.percentile = 0.3
+ensemble_sac_agent.EnsembleSacAgent.gradient_clipping = %GRADIENT_CLIPPING
+ensemble_sac_agent.EnsembleSacAgent.percentile = %PERCENTILE
+ensemble_sac_agent.EnsembleSacAgent.reward_scale_factor = %REWARD_SCALE_FACTOR
 
 ensemble_sac_agent.EnsembleSacAgent.actor_optimizer = @ac_opt/tf.keras.optimizers.Adam()
 ac_opt/tf.keras.optimizers.Adam.learning_rate = %LEARNING_RATE

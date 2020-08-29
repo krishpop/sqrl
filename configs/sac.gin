@@ -14,7 +14,8 @@ AGENT_CLASS = 'sac'
 
 # AGENT BINDINGS
 sac_agent.SacAgent.target_update_tau = 0.005
-sac_agent.SacAgent.reward_scale_factor = 1.0
+sac_agent.SacAgent.reward_scale_factor = %REWARD_SCALE_FACTOR
+sac_agent.SacAgent.gradient_clipping = %GRADIENT_CLIPPING
 
 ## AGENT OPTIMIZER BINDINGS
 sac_agent.SacAgent.actor_optimizer = @ac_opt/tf.keras.optimizers.Adam()
