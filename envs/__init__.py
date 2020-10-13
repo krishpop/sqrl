@@ -22,14 +22,19 @@ import gym
 from safemrl.envs import minitaur, env_randomizers
 from pybullet_envs.minitaur.envs.env_randomizers import minitaur_terrain_randomizer
 from pybullet_envs.minitaur.envs.env_randomizers import minitaur_env_randomizer
-from safemrl.envs import three_finger
 
 try:
   from safemrl.envs import cube_env
-  cube_imported = True
 except ImportError:
-  print('cube was not imported')
-  cube_imported = False
+  print('cube_env was not imported')
+  cube_env = None
+
+try:
+  from safemrl.envs import three_finger
+except ImportError:
+  print("three_finger was not imported")
+  three_finger = None
+
 
 from safemrl.envs import point_mass
 from safemrl.envs import sg_envs
@@ -111,29 +116,32 @@ if not registered:
     kwargs={'env_randomizer': randomizers, 'max_steps': 500}
   )
 
-  v_num = 0
-  for ac_hist in [0, 7]:
-    for n_steps in [500, 100, 1000]:
-      for same_goals in [True, False]:
-        register(
-          id="SafemrlCube-v{}".format(v_num),
-          entry_point=cube_env.SafemrlCubeEnv,
-          max_episode_steps=n_steps,
-          kwargs=dict(max_steps=n_steps, same_goals=same_goals, action_history=ac_hist)
-        )
-        v_num += 1
+  # CUBE ENVS
+  if cube_env:
+    v_num = 0
+    for ac_hist in [0, 7]:
+      for n_steps in [500, 100, 1000]:
+        for same_goals in [True, False]:
+          register(
+            id="SafemrlCube-v{}".format(v_num),
+            entry_point=cube_env.SafemrlCubeEnv,
+            max_episode_steps=n_steps,
+            kwargs=dict(max_steps=n_steps, same_goals=same_goals, action_history=ac_hist)
+          )
+          v_num += 1
 
 # THREE FINGER ENVS
-  register(
-    id="ThreeFingerRawEnv-v0",
-    entry_point=three_finger.ThreeFingerRawEnv,
-    max_episode_steps=100,
-    kwargs={'max_steps': 100}
-  )
+  if three_finger:
+    register(
+      id="ThreeFingerRawEnv-v0",
+      entry_point=three_finger.ThreeFingerRawEnv,
+      max_episode_steps=100,
+      kwargs={'max_steps': 100}
+    )
 
-  register(
-    id="ThreeFingerRawResetEnv-v0",
-    entry_point=three_finger.ThreeFingerRawEnv,
-    max_episode_steps=100,
-    kwargs={'max_steps': 100, 'reset_on_drop': True}
-  )
+    register(
+      id="ThreeFingerRawResetEnv-v0",
+      entry_point=three_finger.ThreeFingerRawEnv,
+      max_episode_steps=100,
+      kwargs={'max_steps': 100, 'reset_on_drop': True}
+    )

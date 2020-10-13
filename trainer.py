@@ -26,7 +26,6 @@ import os.path as osp
 import time
 import gin
 import gym
-import robel
 import tensorflow as tf
 
 from absl import logging
@@ -56,6 +55,10 @@ try:
   import highway_env
 except ImportError:
   logging.debug("Could not import highway_env")
+try:
+  import robel
+except ImportError:
+  logging.debug("Could not import robel")
 
 # Loss value that is considered too high and training will be terminated.
 MAX_LOSS = 1e9
